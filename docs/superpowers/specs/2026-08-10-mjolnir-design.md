@@ -268,12 +268,19 @@ So:
   reference set, with an explicit ANI floor for a species claim and a documented
   "cannot resolve below complex" outcome for MAC and MTBC.
 - **Within MTBC**: lineage-defining SNP barcodes only. `barcode.bed` from tbdb
-  supplies the scheme. Animal lineages and BCG are called from their defining
-  SNPs, with the caveat that *M. bovis* is defined by very few phylogenetic SNPs
-  (23 in SNP-IT) and is therefore highly sensitive to coverage gaps and
-  contamination — reported as a confidence caveat on the call.
+  supplies the scheme — an 8-column BED, 1,111 SNP rows, 126 taxa, which also
+  encodes the lineage → named-family mapping (lineage2 = East-Asian/Beijing/RD105
+  and so on), so no hand-built lookup table is needed.
+- **Animal lineages use the La1/La2/La3 nomenclature** (Zwyer et al. 2021):
+  La1 = *M. bovis* with sublineages La1.1–La1.8, La2 = *M. caprae*,
+  La3 = *M. orygis*. tbdb adopts this verbatim.
 - **BCG matters clinically** (intrinsic pyrazinamide resistance) and is called
-  and flagged explicitly.
+  and flagged explicitly — but `La1.2.BCG` is supported by only **5 SNPs**, the
+  thinnest evidence of any major taxon in the file, as are La2 and La3. Every
+  such call carries a barcode-support caveat, because at 5 defining sites a
+  coverage gap or a contaminant is enough to move the call.
+- Barcode support (sites called / sites expected) is reported with every call,
+  never just the label.
 - **Within MAC**: *M. chimaera* vs *M. intracellulare* vs *M. avium* resolved by
   ANI plus marker SNPs, since this is exactly the distinction the outbreak data
   on hand requires.
@@ -297,8 +304,25 @@ Grounding: R10.4.1 + Dorado `sup` is the minimum credible ONT configuration
 (`fast` is not acceptable); Clair3/DeepVariant lead on ONT bacterial data while
 BCFtools is specifically weak on indels; precision and recall degrade notably
 below 25×; the ≥5 reads (ONT) / ≥3 reads (Illumina) and ≥90% major-variant
-thresholds are the published clinical-DST thresholds from a 508-isolate
-ONT-vs-Illumina MTBC study.
+thresholds are the clinical-DST thresholds from a 508-isolate ONT-vs-Illumina
+MTBC study.
+
+**Strength of that evidence, stated honestly.** The 508-isolate study is a
+bioRxiv **preprint**, not peer reviewed, and is internally inconsistent about
+its own lineage-concordance figure (95.8% in the abstract, 95.5% in the
+results). The eLife caller benchmark's headline "99.99% SNP F1, better than
+Illumina" comes from a **pseudo-real truthset** — variants from a ~99.5%-ANI
+donor grafted onto each sample's own assembly, with indels > 50 bp and
+structural variation removed — so it is not a clinical accuracy figure. The
+thresholds are the best available and Mjolnir uses them, but the report cites
+them as preprint/benchmark-derived rather than as settled standards.
+
+Two gaps found and not papered over: there is **no published R10.4.1-era ONT
+validation of NTM species ID or NTM genotypic DST** (`erm(41)`/`rrl`/`rrs`), and
+**no ONT-specific homopolymer-error study for `pncA`, `rrs` or `rrl` in
+mycobacteria** — the homopolymer concern is a reasonable inference from the
+general error mode, not a measured mycobacterial result. ONT NTM resistance
+calls therefore carry an explicit "not validated on this platform" caveat.
 
 Three consequences the report must state, per platform:
 
@@ -369,12 +393,56 @@ and the report says so.
   error-prone regions, and counted only SNPs with no other SNP within 12 bases.
   `mask.bed` from tbdb supplies the MTB mask; NTM references get their own
   repeat mask computed at database build time.
+- **Masking is not a solved constant, and the report must say which mask it
+  used.** tbdb's mask changed twice in three years (Modlin blind spots, 2023-03;
+  merged Marin + Modlin, 2025-08) and the candidate schemes differ substantially.
+  The common claim that PE/PPE alone exceeds 10% of H37Rv is wrong — computed
+  from the Coscolla exclusion BED it is 168 regions, 283,344 bp, **6.42%**.
+  Marin et al. 2022 further found that raising the mapping-quality threshold
+  (MQ ≥ 40: precision 99.1%, recall 85.8%) outperformed blanket masking, and
+  that 52 of 168 PE/PPE genes map reliably. So the mask is a named, versioned,
+  swappable input printed in the report — not a constant compiled into the tool.
 - Clustering at a stated threshold, with the threshold's basis printed. Defaults
   follow the 5-SNP / 12-SNP TB conventions; the prior chimaera run on this
   machine used `--distance 6`, so the value is a flag, not a constant.
 - **Shared-callable-sites denominator beside every distance.** As in
   `tesseract-ai`'s cgMLST output: 12 differences over 4.1 Mb callable and over
   400 kb callable are not the same statement.
+
+## 9b. Comparability with MTBseq — and why numbers will differ
+
+Labs will compare Mjolnir's output against MTBseq's. That comparison is only
+honest if the differences are stated, because **MTBseq does not call variants
+the way its documentation implies**. Verified from the v1.1.0 source:
+
+- Variant calling is **pure Perl** in `TBtools::call_variants` — a majority-allele
+  caller over a 21-column position table. Not GATK, not bcftools. GATK 3.8 is
+  used only for indel realignment and optional BQSR.
+- The frequency **denominator includes N and GAP counts**, and GAP wins all ties
+  in the order A < C < G < T < N < GAP. A conventional ACGT-only depth produces
+  different allele frequencies at the same position.
+- **No mapping-quality filtering happens at any stage.** `samtools mpileup -B -A -x`
+  passes no `-q`, and `-A` re-includes anomalous read pairs. Adding a MAPQ filter
+  changes calls in repetitive and PE/PPE regions relative to MTBseq.
+- `samtools mpileup` **caps depth at 250** by default and MTBseq never passes
+  `-d`, so high-depth samples are downsampled before frequencies are computed.
+- `--minbqual` is a **base**-quality threshold, despite `--help` calling it
+  "minimum positional mapping quality".
+- `--all_vars` is documented but hard-coded off in `TBvariants.pm`/`TBstats.pm`
+  and hard-coded on in `TBjoin.pm`/`TBstrains.pm`.
+- `TBjoin`'s discovery regex uses `$micovf` where it should use `$micovr`, so a
+  run with `mincovf != mincovr` cannot find its own files — a plausible
+  contributor to the `TBamend` failure in the local 2022 chimaera log.
+
+Mjolnir therefore ships `--mtbseq-compat`, which reproduces MTBseq's thresholds
+(§ config) **and** its denominator and tie-break, so a lab can reconcile the two
+tools. Outside that flag Mjolnir uses conventional ACGT depth and applies a MAPQ
+floor, and the report states which convention produced the numbers.
+
+MTBseq's built-in lineage calling is frozen at Coll 2014 plus Homolka plus a
+Beijing sub-scheme, and cannot call L8, L9, *M. orygis* or BCG at all. Its
+inline comments also transpose the L1 and L3 geographic epithets — a
+documentation bug, not a calling bug, but one that has propagated into reports.
 
 ## 10. The agent
 
