@@ -453,8 +453,7 @@ def cmd_db(args: Any) -> int:
                 print("  checksum    {0}".format(installed.checksum or "-"))
                 print("  fetched     {0}".format(installed.fetched or "-"))
             else:
-                print("  installed   no ({0} {1})".format(
-                    db_registry.FETCH_HINT, name))
+                print("  installed   no ({0})".format(db_registry.fetch_hint(name)))
             print()
         return 0
 

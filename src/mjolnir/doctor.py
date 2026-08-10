@@ -399,7 +399,7 @@ DATABASES: Tuple[DatabaseSpec, ...] = (
         LEVEL_REQUIRED,
         licence="ODC-By v1.0 (redistributable with attribution)",
         citation=config.SRC_WHO_V2,
-        fetch_hint="mjolnir db fetch who"),
+        fetch_hint="mjolnir db fetch who-catalogue-v2"),
     DatabaseSpec(
         "H37Rv reference (NC_000962.3)",
         ("NC_000962.3.fasta", "*NC_000962*.fa*", "reference/*NC_000962*"),
@@ -408,7 +408,7 @@ DATABASES: Tuple[DatabaseSpec, ...] = (
         LEVEL_REQUIRED,
         licence="public",
         citation=config.SRC_NC_000962,
-        fetch_hint="mjolnir db fetch reference"),
+        fetch_hint="mjolnir db fetch h37rv"),
     DatabaseSpec(
         "tbdb mutations.csv",
         ("mutations.csv", "tbdb/mutations.csv"),
@@ -444,16 +444,21 @@ DATABASES: Tuple[DatabaseSpec, ...] = (
         LEVEL_OPTIONAL,
         licence="GPL-3.0 (MTBseq)",
         citation="ngs-fzb/MTBseq_source var/res/",
-        fetch_hint="mjolnir db fetch mtbseq"),
+        fetch_hint="mjolnir db fetch mtbseq-resistance"),
     DatabaseSpec(
         "mycobacterial ANI reference set",
-        ("ani/*.msh", "ani/*.sketch", "ani/references.txt", "*.msh"),
+        ("ani/references.tsv", "ani/*.msh", "ani/mac_markers.tsv", "*.msh"),
         "species identification; without it Mjolnir cannot name a species and "
         "will not guess one from a read classifier",
         LEVEL_OPTIONAL,
         licence="per source assembly",
         citation=config.SRC_ANI_SPECIES,
-        fetch_hint="mjolnir db fetch ani"),
+        # No registry entry exists for the ANI set: design §14 leaves its
+        # composition and size budget open, so it is operator-supplied and the
+        # hint says how to build it rather than naming a command that would fail.
+        fetch_hint=("put the reference genomes under <db>/ani/ and list them in "
+                    "<db>/ani/references.tsv (columns: file, name, and optionally "
+                    "complex, accession, subspecies, note, source)")),
 )
 
 

@@ -82,7 +82,7 @@ from .lineage import PileupCounts, major_allele
 # Where the reference set lives, and what it is
 # ---------------------------------------------------------------------------
 
-#: Layout under the database root. ``mjolnir db fetch ani`` writes all of it;
+#: Layout under the database root, written by the operator (see below);
 #: nothing here is vendored, because the reference set is the largest single
 #: download Mjolnir needs and its composition is still an open question (design
 #: §14).
@@ -91,7 +91,14 @@ REFERENCE_MANIFEST_NAME = "references.tsv"
 MASH_SKETCH_NAME = "mycobacteria.msh"
 MAC_MARKER_NAME = "mac_markers.tsv"
 
-ANI_FETCH_HINT = "mjolnir db fetch ani"
+#: Mjolnir ships no ANI reference set — design §14 leaves its composition and
+#: download budget open — so the hint says how to build one rather than naming a
+#: `mjolnir db fetch` target that does not exist in the registry.
+ANI_FETCH_HINT = (
+    "put the reference genomes under <db>/ani/ and list them in "
+    "<db>/ani/references.tsv (columns: file, name, and optionally complex, "
+    "accession, subspecies, note, source)"
+)
 
 #: Columns the manifest must carry, and the ones it may. ``complex`` is optional
 #: because :func:`complex_for` can derive it from the name, but a manifest that

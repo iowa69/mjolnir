@@ -79,8 +79,8 @@ from .seqio import assembly_stats, validate_fasta, validate_fastq
 from .typing.lineage import (H37RV_CHROM_ALIASES, BarcodeSite, barcode_path,
                              call_lineage, lineage_checks, lineage_not_applicable,
                              load_barcode, scheme_description)
-from .typing.species import (MarkerSnp, ReferenceGenome, ani_matches,
-                             identify_species, load_mac_markers,
+from .typing.species import (ANI_FETCH_HINT, MarkerSnp, ReferenceGenome,
+                             ani_matches, identify_species, load_mac_markers,
                              load_reference_set, species_checks)
 from .utils import LOG, MjolnirError, ensure_dir, human_time, safe_name
 
@@ -286,6 +286,19 @@ def callable_regions(bam: Path, *, platform: str, min_depth: int,
     return regions
 
 
+def _dedupe(items: Iterable[str]) -> List[str]:
+    """Order-preserving de-duplication. The same caveat twice reads as noise,
+    and a reader who skims a repeated sentence stops reading the list."""
+    seen: Set[str] = set()
+    out: List[str] = []
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
 def _observation_from_site(site: PileupSite) -> SiteObservation:
     """A heterozygosity observation from one pileup column.
 
@@ -436,7 +449,12 @@ class Pipeline(object):
             except MjolnirError:
                 pass
             candidates.append(root / legacy)
-            found[key] = next((p for p in candidates if p.exists()), None)
+            # When nothing is installed, the registry path is still the right
+            # answer to hand on: the error a loader raises then names the place
+            # ``mjolnir db fetch`` would have written the file, rather than a
+            # legacy layout nothing writes to.
+            found[key] = next((p for p in candidates if p.exists()),
+                              candidates[0] if candidates else None)
         return found
 
     def barcode(self) -> List[BarcodeSite]:
@@ -561,7 +579,7 @@ class Pipeline(object):
             "  pass one with --ref, or install the ANI reference set: {2}".format(
                 sample.sample_id,
                 species.display if species is not None else "not determined",
-                db_registry.FETCH_HINT)
+                ANI_FETCH_HINT)
         )
 
     def _mtbseq_ntm_reference(self, species_name: str) -> Optional[Path]:
@@ -659,9 +677,14 @@ class Pipeline(object):
                 is_reads=platform != PLATFORM_FASTA,
                 threads=self.config.threads, matches=matches,
                 markers=self.markers(), marker_counts={})
+        identified = provisional is not None
         if provisional is None:
+            # No method is claimed on a call that was never made. Naming one
+            # would make ``species_checks`` report the identification as having
+            # come from a method other than ANI, which is the one thing the
+            # design forbids saying about a species call.
             provisional = SpeciesCall(
-                name="unresolved", method="ANI",
+                name="unresolved", method="",
                 caveats=[self._references_error or
                          "species identification did not run",
                          config.SPECIES_METHOD_REFUSAL])
@@ -738,8 +761,14 @@ class Pipeline(object):
         # -- one pileup for the barcode, the markers and the catalogue -------
         barcode_sites = self.barcode() if self.options.typing else []
         marker_snps = self.markers() if self.options.typing else []
+        is_mtbc, assumption = self.mtbc_context(result.species, reference, contig_names)
+        if assumption:
+            result.caveats.append(assumption)
+            result.checks.append(Check.not_measured(
+                "mtbc_membership", assumption,
+                source=config.source_for("species_method_refusal"), category="typing"))
         catalogue_positions: Dict[str, Set[Tuple[str, int]]] = {}
-        if self.options.resistance and result.species.complex == config.COMPLEX_MTBC:
+        if self.options.resistance and is_mtbc:
             # Catalogue coordinates are H37Rv coordinates. Piling them up against
             # an NTM reference would read 30,000 unrelated positions and print
             # allele fractions for variants that cannot exist there.
@@ -759,10 +788,20 @@ class Pipeline(object):
                 marker_counts=self._counts_for(marker_snps, pileup, translation))
             if final is not None:
                 result.species = final
-        result.checks.extend(species_checks(result.species))
+        if identified:
+            result.checks.extend(species_checks(result.species))
+        else:
+            result.checks.append(Check.not_measured(
+                "species_identification",
+                "no species identification was attempted or completed, so this "
+                "sample is reported as an unidentified mycobacterium. {0}".format(
+                    config.SPECIES_METHOD_REFUSAL),
+                source=config.source_for("species_method_refusal"),
+                category="typing"))
 
         # -- lineage ----------------------------------------------------------
-        result.lineage = self._lineage(result, barcode_sites, pileup, translation, platform)
+        result.lineage = self._lineage(result, barcode_sites, pileup, translation,
+                                       platform, is_mtbc)
         result.checks.extend(lineage_checks(result.lineage))
         if result.lineage.is_bcg:
             result.caveats.append(config.BCG_PZA_NOTE)
@@ -773,7 +812,7 @@ class Pipeline(object):
         # -- resistance -------------------------------------------------------
         if self.options.resistance:
             self._resistance(result, variants, pileup, translation, catalogue_positions,
-                             platform)
+                             platform, is_mtbc)
 
         # -- contamination ----------------------------------------------------
         if self.options.contamination:
@@ -785,6 +824,8 @@ class Pipeline(object):
             self._collect_cohort_input(result, sample, bam, reference, platform, variants)
 
         # -- provenance and prose ---------------------------------------------
+        result.caveats = _dedupe(result.caveats)
+        result.warnings = _dedupe(result.warnings)
         result.tool_versions = self._tool_versions()
         result.database_versions = self._database_versions()
         result.status = result.overall_status()
@@ -887,16 +928,55 @@ class Pipeline(object):
                 counts[(marker.chrom, marker.pos)] = dict(site.counts)
         return counts
 
+    def mtbc_context(self, species: SpeciesCall, reference: Path,
+                     contigs: Sequence[str] = ()) -> Tuple[bool, str]:
+        """Whether the MTBC catalogues and barcode apply, and on what basis.
+
+        Measured membership is the first answer. The second exists because
+        Mjolnir ships no ANI reference set (design §14 leaves its composition
+        open), so on a fresh installation no species can be *measured* at all —
+        and a tool that then refuses to grade a *M. tuberculosis* genome mapped
+        to H37Rv is useless in its own default configuration.
+
+        So a run explicitly pointed at H37Rv is treated as an operator assertion
+        that this is an MTBC isolate, and the second return value is the sentence
+        that says exactly that. It is recorded as a caveat and as an unmeasured
+        check, never as a species call: the report still prints "unresolved" for
+        the species, because nothing identified it.
+        """
+        if species.complex == config.COMPLEX_MTBC or species.is_mtbc:
+            return True, ""
+        if species.resolved_to_species:
+            return False, ""
+        name = Path(reference).name
+        # The accession is the real signal: every MTBC catalogue coordinate,
+        # barcode site and mask interval in this tool is written against
+        # NC_000962.3, so a reference carrying that accession is the coordinate
+        # system they need. The bare alias "Chromosome" is deliberately not
+        # accepted — any single-contig assembly can be called that.
+        h37rv_contig = any(str(c).startswith("NC_000962") or str(c).startswith("AL123456")
+                           for c in contigs)
+        if h37rv_contig or name.startswith(config.H37RV_ACCESSION) \
+                or "h37rv" in name.lower():
+            return True, (
+                "MTBC membership was not established from sequence: no species "
+                "identification was made, and the catalogues and lineage barcode "
+                "were applied because this run was called against the H37Rv "
+                "coordinate system ({0}). That is an operator assertion, not a "
+                "measurement.".format(name))
+        return False, ""
+
     def _lineage(self, result: SampleResult, barcode_sites: Sequence[BarcodeSite],
                  pileup: Mapping[Tuple[str, int], PileupSite],
-                 translation: Mapping[str, str], platform: str) -> LineageCall:
+                 translation: Mapping[str, str], platform: str,
+                 is_mtbc: bool) -> LineageCall:
         """The MTBC member from the SNP barcode, or a stated non-answer.
 
         Three distinct outcomes, and none of them is silence: not an MTBC
         isolate, no barcode installed, or no pileup to read it out of.
         """
         species = result.species
-        if species.complex != config.COMPLEX_MTBC:
+        if not is_mtbc:
             return lineage_not_applicable(
                 species.display,
                 "the lineage barcode defines MTBC lineages only" if species.complex
@@ -1021,10 +1101,9 @@ class Pipeline(object):
                     pileup: Mapping[Tuple[str, int], PileupSite],
                     translation: Mapping[str, str],
                     catalogue_positions: Mapping[str, Set[Tuple[str, int]]],
-                    platform: str) -> None:
+                    platform: str, is_mtbc: bool) -> None:
         """Drug calls, by whichever route the organism has an evidence base for."""
-        species = result.species
-        if species.complex == config.COMPLEX_MTBC or species.is_mtbc:
+        if is_mtbc:
             self._resistance_mtbc(result, variants, pileup, translation,
                                   catalogue_positions, platform)
             return
@@ -1106,14 +1185,23 @@ class Pipeline(object):
         if assessment.citations:
             result.caveats.append(
                 "NTM calls rest on: {0}".format("; ".join(assessment.citations)))
-        result.checks.append(Check.not_measured(
-            "erm41_sequevar",
-            "erm(41) sequevar typing needs the gene's coordinates in this "
-            "reference, which Mjolnir does not yet ship for NTM genomes; the "
-            "macrolide call therefore rests on rrl alone and inducible "
-            "resistance was not assessed",
-            source=config.source_for("erm41_sequevar_position"),
-            category="resistance"))
+        # Only where erm(41) is part of this organism's evidence base. Saying
+        # "erm(41) was not typed" about M. chimaera would be true and useless;
+        # saying it about M. abscessus is the single most important gap in the
+        # macrolide call.
+        uses_erm41 = any(
+            "erm(41)" in (ntm_engine.evidence_for(result.species, call.drug).genes
+                          if ntm_engine.evidence_for(result.species, call.drug) else ())
+            for call in assessment.drugs)
+        if uses_erm41:
+            result.checks.append(Check.not_measured(
+                "erm41_sequevar",
+                "erm(41) sequevar typing needs the gene's coordinates in this "
+                "reference, which Mjolnir does not yet ship for NTM genomes; the "
+                "macrolide call therefore rests on rrl alone and inducible "
+                "resistance was not assessed",
+                source=config.source_for("erm41_sequevar_position"),
+                category="resistance"))
 
     # -- contamination ------------------------------------------------------
 
@@ -1374,7 +1462,7 @@ class Pipeline(object):
             joint_sites=table.site_count,
             reference=table.reference,
             checks=checks,
-            caveats=[c for c in caveats if c],
+            caveats=_dedupe(caveats),
             tool_versions=self._tool_versions(),
             database_versions=self._database_versions(),
             mjolnir_version=__version__,

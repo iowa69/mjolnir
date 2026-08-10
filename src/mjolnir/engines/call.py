@@ -640,7 +640,9 @@ def clair3_model_path(db_dir: Optional[PathLike] = None,
     raise MjolnirError(
         "Clair3 model {0!r} not found under {1}.\n"
         "  models present: {2}\n"
-        "  fetch it with: mjolnir db fetch clair3-model --name {0}\n"
+        "  download one from https://github.com/HKU-BAL/Clair3 (pre-trained "
+        "models) and unpack it into that directory, or pass "
+        "--clair3-model /path/to/{0}\n"
         "  (the model must match the chemistry and basecaller: the design "
         "requires R10.4.1 with Dorado sup)".format(
             name, root, ", ".join(available) if available else "none")
@@ -680,7 +682,8 @@ def choose_caller(platform: str, *, allow_degraded_fallback: bool = False) -> st
         "Clair3 is the ONT variant caller (design §7) and run_clair3.sh is not on "
         "PATH.\n"
         "  conda install -c conda-forge -c bioconda clair3\n"
-        "  then: mjolnir db fetch clair3-model --name {0}\n"
+        "  then install a Clair3 model matching your chemistry (R10.4.1 + "
+        "Dorado sup, e.g. {0}) and point at it with --clair3-model\n"
         "The bcftools fallback disables indel calling entirely and must be asked "
         "for explicitly with --allow-degraded-ont-calling.".format(CLAIR3_DEFAULT_MODEL)
     )
