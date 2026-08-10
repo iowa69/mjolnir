@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (DECOY, GRADE_2_ENDASH, who_master_rows, write_who_workbook)
+from conftest import DECOY, GRADE_2_ENDASH, who_master_rows
 from mjolnir import config
 from mjolnir.resistance import catalogues
 from mjolnir.utils import MjolnirError

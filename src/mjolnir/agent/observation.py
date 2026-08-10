@@ -905,7 +905,7 @@ def rule_summary_cohort(cohort: CohortResult) -> Tuple[str, str]:
     head = ["{0} samples compared".format(len(cohort.samples))]
     if cohort.threshold is not None:
         head.append("clustering at {0} SNPs".format(cohort.threshold))
-    head.append("{0} cluster(s) of more than one sample".format(len(clustered)))
+    head.append("{0} of more than one sample".format(plural(len(clustered), "cluster")))
     headline = "; ".join(head) + "."
 
     body: List[str] = []

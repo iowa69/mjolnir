@@ -679,19 +679,26 @@ def cohort_headline(cohort: CohortResult) -> Tuple[str, str]:
             if p.shared_callable_sites is not None
             and p.shared_callable_sites < MIN_SHARED_CALLABLE_SITES]
     rule = (
-        "{0} samples compared at a threshold of {1} SNPs ({2}); {3} cluster(s) "
-        "covering {4} sample(s).".format(
+        "{0} samples compared at a threshold of {1} SNPs ({2}); {3} "
+        "covering {4}.".format(
             len(cohort.samples), cohort.threshold,
             cohort.threshold_basis or "no basis recorded",
-            len(cohort.clusters), clustered))
+            plural(len(cohort.clusters), "cluster"),
+            plural(clustered, "sample")))
     uncompared = _uncompared_pairs(cohort)
     if uncompared:
-        rule += (" {0} pair(s) were never compared and are reported as absent "
+        # Written out in both numbers rather than assembled from fragments: the
+        # verb, the pronoun and the noun all have to agree, and gluing them
+        # together is how "1 pair was ... reported as absent distances" happens.
+        rule += (" 1 pair was never compared, and is reported as an absent "
+                 "distance, not as zero." if uncompared == 1 else
+                 " {0} pairs were never compared, and are reported as absent "
                  "distances, not as zero.".format(uncompared))
     if thin:
-        rule += (" {0} pair(s) share less than {1:,} callable bases, below which a "
-                 "distance is not comparable to the published SNP thresholds.".format(
-                     len(thin), MIN_SHARED_CALLABLE_SITES))
+        rule += (" {0} less than {1:,} callable bases, below which a distance "
+                 "is not comparable to the published SNP thresholds.".format(
+                     plural(len(thin), "pair shares", "pairs share"),
+                     MIN_SHARED_CALLABLE_SITES))
     if interpretation is None or interpretation.rule_only or not interpretation.headline.strip():
         reason = ""
         if interpretation is not None and interpretation.discarded_reason:
@@ -742,7 +749,8 @@ def drug_flags(drug_call: Any) -> List[str]:
     if drug_call.target_covered is False:
         flags.append("{0} target regions not callable".format(FLAG_NOT_EVALUABLE))
     if drug_call.caveats:
-        flags.append("{0} {1} platform caveat(s)".format(FLAG_CAVEAT, len(drug_call.caveats)))
+        flags.append("{0} {1}".format(FLAG_CAVEAT,
+                                      plural(len(drug_call.caveats), "platform caveat")))
     return flags
 
 
@@ -913,8 +921,8 @@ def cohort_drug_grid(results: Sequence[SampleResult]) -> Grid:
         grid.row_sublabels.append(result.species.display)
         flags = []
         if result.disagreements():
-            flags.append("{0} {1} drug(s) with catalogue disagreement".format(
-                FLAG_DISAGREEMENT, len(result.disagreements())))
+            flags.append("{0} {1} with catalogue disagreement".format(
+                FLAG_DISAGREEMENT, plural(len(result.disagreements()), "drug")))
         grid.row_flags.append(flags)
         row: List[GridCell] = []
         for drug in drugs:
