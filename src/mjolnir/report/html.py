@@ -321,7 +321,7 @@ def _table(rows: Sequence[Dict[str, Any]], columns: Sequence[Tuple[str, str]],
            table_id: str, status_column: str = "", flag_key: str = "",
            searchable: bool = False, empty: str = "nothing to show in this table") -> str:
     """A sortable annex table. Every table in the report goes through here."""
-    if not rows:
+    if not rows or not columns:
         return '<div class="empty">{0}</div>'.format(_e(empty))
     out: List[str] = []
     if searchable:
@@ -512,8 +512,8 @@ def _section_qc(result: SampleResult) -> str:
                 ("unit", "unit"), ("note", "note")], "tbl-observations"),
     ]
     support = T.lineage_support_rows(result)
-    if support:
-        keys = [k for k in support[0] if k != "sample"]
+    keys = [k for k in support[0] if k != "sample"] if support else []
+    if keys:
         out.append("<h3>Barcode sites</h3>")
         out.append(_table(support, [(k, k.replace("_", " ")) for k in keys],
                           "tbl-barcode", searchable=True))

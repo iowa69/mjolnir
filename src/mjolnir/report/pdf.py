@@ -390,19 +390,20 @@ def coverage_strip_scene(result: SampleResult, width: float = CONTENT_WIDTH) -> 
 
     y = 0.0
     y = _metric_block(scene, "read depth (x)", depth_specs, by_label, y, label_w,
-                      track_w, value_w, row_h, track_h, header_h,
+                      track_w, row_h, track_h, header_h,
                       scale_max=depth_max, is_fraction=False)
     y += 12.0
     _metric_block(scene, "coverage and composition (%)", frac_specs, by_label, y,
-                  label_w, track_w, value_w, row_h, track_h, header_h,
+                  label_w, track_w, row_h, track_h, header_h,
                   scale_max=1.0, is_fraction=True)
     return scene
 
 
 def _metric_block(scene: Scene, title: str, specs: Sequence[T.MetricSpec],
                   by_label: Dict[str, Any], y: float, label_w: float, track_w: float,
-                  value_w: float, row_h: float, track_h: float, header_h: float,
+                  row_h: float, track_h: float, header_h: float,
                   scale_max: float, is_fraction: bool) -> float:
+    """One axis and its rows. Returns the y below the block."""
     scene.add(Text(0.0, y + 8.0, title, size=6.6, fill=MUTED, bold=True))
     axis_y = y + header_h - 3.0
     scene.add(Line(label_w, axis_y, label_w + track_w, axis_y, stroke=LINE, width=0.5))
@@ -424,10 +425,15 @@ def _metric_block(scene: Scene, title: str, specs: Sequence[T.MetricSpec],
                        stroke=LINE, stroke_width=0.4))
         value = check.value if (check is not None and check.measured) else None
         if value is None or not isinstance(value, (int, float)):
-            _hatch(scene, track_x, row_y, track_w, track_h, colour=HATCH_INK, step=3.4)
+            _hatch(scene, track_x, row_y, track_w, track_h, colour=HATCH_INK, step=4.5)
             why = (check.reading if check is not None else "") or "not measured"
+            # The reason goes inside the track, where there is room for it. A
+            # hatched bar on its own says "no data"; the sentence says which
+            # capability was absent, which is the part a reader needs.
+            scene.add(Text(track_x + 5.0, row_y + track_h - 2.0,
+                           _ellipsis(why, 88), size=5.4, fill=INK))
             scene.add(Text(track_x + track_w + 4.0, row_y + track_h - 1.0,
-                           _ellipsis("not measured: " + why, 40), size=5.8, fill=MUTED))
+                           "not measured", size=6.0, fill=MUTED, bold=True))
         else:
             style = STATUS_STYLE.get(check.status, STATUS_STYLE[STATUS_WARN])
             fraction = min(1.0, float(value) / scale_max) if scale_max else 0.0
@@ -1323,11 +1329,11 @@ def _section_qc(rl, styles, result: SampleResult) -> List[Any]:
         ("value", "value", 80.0), ("unit", "unit", 52.0), ("note", "note", 139.0),
     )))
     support = T.lineage_support_rows(result)
-    if support:
+    keys = [k for k in support[0] if k != "sample"][:6] if support else []
+    if keys:
         out.append(Spacer(1, 6))
         out.append(Paragraph("Barcode sites", styles["h3"]))
-        keys = [k for k in support[0] if k != "sample"][:6]
-        width = CONTENT_WIDTH / max(1, len(keys))
+        width = CONTENT_WIDTH / len(keys)
         out.extend(_row_table(rl, styles, support,
                               [(k, k.replace("_", " "), width) for k in keys]))
     return out
