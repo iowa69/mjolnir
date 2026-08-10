@@ -52,4 +52,9 @@ Documentation = "https://github.com/iowa69/mjolnir#readme"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mjolnir = ["data/**/*"]
+# The playbooks are listed here as well as in MANIFEST.in. The manifest alone
+# does put them in the wheel, but only because include-package-data defaults to
+# true; naming them makes the guarantee explicit rather than incidental. A wheel
+# that ships no playbooks installs cleanly and then runs with no organism
+# knowledge, which is indistinguishable from an organism that has no playbook.
+mjolnir = ["data/**/*", "agent/playbooks/*.yaml"]

@@ -77,11 +77,23 @@ answer from each, and assembling the rest by hand.
 
 ## Install
 
+Not on bioconda yet — the recipe is written and builds, but the submission has
+not been made, so the conda one-liner does not work and is not printed here.
+From a checkout:
+
 ```bash
-conda install -c conda-forge -c bioconda mjolnir-myco
+git clone https://github.com/iowa69/mjolnir && cd mjolnir
+conda env create -f environment.yml     # the external tools
+conda activate mjolnir
+pip install .
+
 mjolnir doctor            # says exactly what is present and what is missing
-mjolnir db --list         # every database, its licence and its citation
+mjolnir db list           # every database, its licence and its citation
+mjolnir db fetch          # obtain them
 ```
+
+The conda recipe is in `conda-recipe/` and `conda build conda-recipe` succeeds;
+once it is on bioconda this section becomes one line.
 
 `doctor` never dies at the first missing tool. It reports the whole environment
 up front, separating what is required from what is optional, so you find out
@@ -258,10 +270,23 @@ permit redistribution is fetched at install time rather than vendored.
 
 ## Status
 
-Version 0.1.0. The code is complete and unit-tested. Validation against the
-159-isolate *M. chimaera* multi-site collection is planned in
-[docs/VALIDATION.md](docs/VALIDATION.md), which states for each run what it can
-and cannot establish.
+Version 0.1.0. 42 modules, 607 unit tests, pyflakes clean, a wheel that installs
+and runs from a clean environment. What has *not* happened is the part that
+matters most:
+
+**No sample has been through this tool yet.** Every threshold is sourced, every
+refusal is tested, and the report renders — from synthetic records, in
+`examples/`. Validation against the 159-isolate *M. chimaera* multi-site
+collection is planned in [docs/VALIDATION.md](docs/VALIDATION.md), which states
+for each run what it can and cannot establish, and it has not been run. Until it
+has, nothing here is an accuracy claim.
+
+Run the examples to see the output shape without installing a single database:
+
+```bash
+PYTHONPATH=src python examples/demo_report.py out/     # a clinical PDF + HTML
+PYTHONPATH=src python examples/demo_cohort.py out/     # an outbreak cohort
+```
 
 <!-- METRICS:BEGIN -->
 
