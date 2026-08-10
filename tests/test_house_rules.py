@@ -80,15 +80,28 @@ def test_no_module_raises_a_bare_exception():
     assert not offenders, "raise without an instance: {0}".format(", ".join(offenders))
 
 
-def test_the_package_imports_without_any_optional_dependency():
-    """``mjolnir doctor`` has to be able to report a missing tool, not die on it."""
-    import mjolnir  # noqa: F401
-    from mjolnir import cli, config, doctor, pipeline, records, seqio  # noqa: F401
-    from mjolnir.agent import discipline, observation  # noqa: F401
-    from mjolnir.cohort import cluster, distance, joint  # noqa: F401
-    from mjolnir.contamination import heterozygosity, purity  # noqa: F401
-    from mjolnir.db import fetch, registry  # noqa: F401
-    from mjolnir.engines import call, depth, map, pileup  # noqa: F401
-    from mjolnir.report import html, pdf, tables  # noqa: F401
-    from mjolnir.resistance import catalogues, consensus, normalise, ntm  # noqa: F401
-    from mjolnir.typing import lineage, species  # noqa: F401
+def test_every_module_imports_without_any_optional_dependency():
+    """``mjolnir doctor`` has to report a missing tool, not die on it.
+
+    Imported through :func:`importlib.import_module` rather than as bare import
+    statements. ``# noqa`` is a flake8 convention and pyflakes does not honour
+    it, so a block of deliberately-unused imports fails the lint step that CI
+    runs over this directory — the test for the house rules would have been the
+    thing that broke the build.
+
+    Walking the package also means a module added later is covered without
+    anyone remembering to add it here.
+    """
+    import importlib
+    import pkgutil
+
+    import mjolnir
+
+    failures = []
+    for module in pkgutil.walk_packages(mjolnir.__path__, "mjolnir."):
+        try:
+            importlib.import_module(module.name)
+        except Exception as exc:  # noqa: BLE001 - the failure is the finding
+            failures.append("{0}: {1}: {2}".format(
+                module.name, type(exc).__name__, exc))
+    assert not failures, "modules that do not import: {0}".format("; ".join(failures))
