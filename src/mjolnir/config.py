@@ -811,6 +811,23 @@ DRUG_CODES: Dict[str, str] = {
     "Delamanid": "DLM", "Pretomanid": "PMD", "Amikacin": "AMK",
     "Kanamycin": "KAN", "Streptomycin": "STM", "Ethionamide": "ETO",
     "Capreomycin": "CAP", "Clarithromycin": "CLR",
+    # Graded by MTBseq but not by the WHO catalogue v2. They are here because
+    # dropping them loses 30 real resistance rows: MTBseq carries 22 for
+    # para-aminosalicylic acid and 8 for cycloserine, and a determinant that
+    # reaches no drug column is indistinguishable from one that was never found.
+    "Para-aminosalicylic acid": "PAS", "Cycloserine": "CS",
+}
+
+#: Drug *classes* that a catalogue may name where an agent is expected. MTBseq
+#: writes ``fluoroquinolones (FQ)`` on 22 rows, which is a statement about the
+#: class - gyrA mutations confer it - and WHO grades those same genes for both
+#: fluoroquinolones it covers. Expanding is therefore correct biologically, but
+#: the report must say the source graded a class rather than these two agents,
+#: so the expansion is recorded rather than applied silently.
+DRUG_CLASSES: Dict[str, Tuple[str, ...]] = {
+    "fluoroquinolones": ("Levofloxacin", "Moxifloxacin"),
+    "fq": ("Levofloxacin", "Moxifloxacin"),
+    "fluoroquinolone": ("Levofloxacin", "Moxifloxacin"),
 }
 
 #: Spellings the three catalogues use for the same drug. Cross-catalogue
@@ -832,6 +849,14 @@ DRUG_ALIASES.update({
     "streptomycine": "Streptomycin", "str": "Streptomycin", "sm": "Streptomycin",
     "ethionamid": "Ethionamide", "eth": "Ethionamide", "eto": "Ethionamide",
     "clarithromycine": "Clarithromycin", "clr": "Clarithromycin",
+    "pas": "Para-aminosalicylic acid",
+    "para-aminosalicylic acid": "Para-aminosalicylic acid",
+    "para aminosalicylic acid": "Para-aminosalicylic acid",
+    "p-aminosalicylic acid": "Para-aminosalicylic acid",
+    "aminosalicylic acid": "Para-aminosalicylic acid",
+    "cs": "Cycloserine", "cycloserine": "Cycloserine",
+    "d-cycloserine": "Cycloserine", "dcs": "Cycloserine",
+    "terizidone": "Cycloserine",
 })
 
 

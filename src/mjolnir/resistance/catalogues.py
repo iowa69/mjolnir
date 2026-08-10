@@ -62,6 +62,7 @@ from ..config import (
     CATALOGUE_TBDB,
     CATALOGUE_WHO,
     DRUG_ALIASES,
+    DRUG_CLASSES,
     H37RV_ACCESSION,
     MTBSEQ_ASYMMETRY_NOTE,
     SRC_MTBSEQ_MANUAL,
@@ -214,6 +215,10 @@ TBDB_RESISTANCE_TYPES: Tuple[str, ...] = ("drug_resistance", "resistance_associa
 # ---------------------------------------------------------------------------
 # MTBseq, verified against ngs-fzb/MTBseq_source var/res/MTB_Resistance_Mediating.txt
 # ---------------------------------------------------------------------------
+
+#: MTBseq's resistance list is latin-1. Verified against the shipped file:
+#: reading it as UTF-8 raises at byte 0x98, offset 7324.
+MTBSEQ_ENCODING = "latin-1"
 
 MTBSEQ_COL_POS_START = "Variant position genome start"
 MTBSEQ_COL_TYPE = "Var. type"
@@ -1018,7 +1023,7 @@ def _check_who_shape(catalogue: Catalogue, decoy_rows: int, real_position_rows: 
 # MTBseq
 # ---------------------------------------------------------------------------
 
-def _parse_mtbseq_drugs(cell: str) -> Tuple[List[str], List[str]]:
+def _parse_mtbseq_drugs(cell: str) -> Tuple[List[str], List[str], List[str]]:
     """Drugs out of ``amikacin (AMK) kanamycin (KAN) capreomycin (CPR)``.
 
     Both halves of each pair are tried against ``config.normalise_drug`` because
@@ -1027,22 +1032,42 @@ def _parse_mtbseq_drugs(cell: str) -> Tuple[List[str], List[str]]:
     returned as unresolved rather than passed through, since ``normalise_drug``
     echoes unknown names and an echoed fragment would become a phantom drug
     column in the report.
+
+    One cell names a *class* rather than an agent: ``fluoroquinolones (FQ)``, on
+    22 rows. Those are expanded to the fluoroquinolones the catalogues grade,
+    which is biologically right for the *gyrA* mutations behind them — but the
+    expansion is returned as its third value so the entry can carry a note. A
+    class-level source silently rendered as two agent-level calls would claim
+    more precision than MTBseq offered.
+
+    Returns ``(drugs, unresolved, expanded_from_classes)``.
     """
     text = _clean(cell)
     if not text:
-        return [], []
+        return [], [], []
     known: List[str] = []
     unresolved: List[str] = []
+    expanded: List[str] = []
     pairs = _MTBSEQ_DRUG_PAIR.findall(text)
     candidates: List[Tuple[str, str]] = list(pairs)
     if not candidates:
         candidates = [(token, "") for token in text.split()]
     for name, code in candidates:
         for attempt in (name, code):
+            if not attempt:
+                continue
+            members = DRUG_CLASSES.get(attempt.lower())
+            if members:
+                for member in members:
+                    if member not in known:
+                        known.append(member)
+                if name and name not in expanded:
+                    expanded.append(name)
+                break
             # DRUG_ALIASES rather than normalise_drug(): the latter echoes an
             # unknown name back, which would turn "mediating" or a stray word
             # into a drug column in the report.
-            resolved = DRUG_ALIASES.get(attempt.lower()) if attempt else None
+            resolved = DRUG_ALIASES.get(attempt.lower())
             if resolved:
                 if resolved not in known:
                     known.append(resolved)
@@ -1050,7 +1075,7 @@ def _parse_mtbseq_drugs(cell: str) -> Tuple[List[str], List[str]]:
         else:
             if name and name not in unresolved:
                 unresolved.append(name)
-    return known, unresolved
+    return known, unresolved, expanded
 
 
 def _mtbseq_hgvs(region: str, aa_change: str, wt_base: str, var_base: str,
@@ -1130,7 +1155,10 @@ def load_mtbseq(path: PathLike, extended: Optional[PathLike] = None) -> Catalogu
 
 def _load_mtbseq_file(path: Path, catalogue: Catalogue,
                       unresolved_drugs: Dict[str, int]) -> None:
-    with smart_open(path, "rt") as handle:
+    # latin-1, not UTF-8: the shipped file raises at byte 0x98, offset 7324.
+    # Decoding it as UTF-8 with replacement would silently mangle the Comment
+    # column, which is where the MIC statements live.
+    with smart_open(path, "rt", encoding=MTBSEQ_ENCODING) as handle:
         reader = csv.reader(handle, delimiter="\t")
         try:
             first = next(reader)
@@ -1160,7 +1188,7 @@ def _load_mtbseq_file(path: Path, catalogue: Catalogue,
                 catalogue._skip("phylogenetic marker, not a drug")
                 continue
 
-            drugs, unresolved = _parse_mtbseq_drugs(antibiotic)
+            drugs, unresolved, expanded = _parse_mtbseq_drugs(antibiotic)
             for name in unresolved:
                 unresolved_drugs[name] = unresolved_drugs.get(name, 0) + 1
             if not drugs:
@@ -1183,6 +1211,13 @@ def _load_mtbseq_file(path: Path, catalogue: Catalogue,
 
             coordinates = _mtbseq_coordinates(header, row, catalogue)
             comment = header.value(row, MTBSEQ_COL_COMMENT)
+            if expanded:
+                # The source graded a class. Say so on the entry, so the report
+                # cannot present it as an agent-level finding MTBseq never made.
+                note = "MTBseq graded the class '{0}', expanded to {1}".format(
+                    "', '".join(expanded), ", ".join(drugs))
+                comment = "{0}; {1}".format(comment, note) if comment and comment != "-" \
+                    else note
             evidence = "; ".join(part for part in (
                 "PMID/reference: " + header.value(row, MTBSEQ_COL_PMID)
                 if header.value(row, MTBSEQ_COL_PMID) not in ("", "-") else "",

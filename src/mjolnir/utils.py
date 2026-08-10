@@ -201,15 +201,23 @@ def ensure_dir(path: PathLike) -> Path:
     return resolved
 
 
-def smart_open(path: PathLike, mode: str = "rt"):
+def smart_open(path: PathLike, mode: str = "rt", encoding: Optional[str] = None):
     """Open a plain, gzip, bzip2 or xz file transparently.
 
     Text reads replace undecodable bytes. Sequence data is ASCII but FASTA
     description lines and catalogue comment columns are free text, and losing a
     character in a comment beats aborting a run on a UnicodeDecodeError.
+
+    *encoding* is for the files that are known not to be UTF-8. MTBseq's
+    resistance list is latin-1 and raises at byte 0x98, offset 7324; naming its
+    encoding recovers the comment text that ``errors="replace"`` would corrupt
+    into replacement characters, and those comments carry the MIC statements the
+    report prints.
     """
     name = str(path)
     text = {"errors": "replace"} if "b" not in mode else {}
+    if encoding and "b" not in mode:
+        text["encoding"] = encoding
     if name.endswith(".gz"):
         return gzip.open(name, mode, **text)
     if name.endswith(".bz2"):
