@@ -95,7 +95,8 @@ from ..records import (
     call_label,
     worst_call,
 )
-from ..utils import LOG, MjolnirError, ensure_dir, natural_key, round_or_none, safe_name
+from ..utils import (LOG, MjolnirError, ensure_dir, natural_key, plural,
+                     round_or_none, safe_name)
 
 #: What a missing value looks like in a TSV. Not the empty string: an empty cell
 #: reads as an empty string to every parser and as "nothing was wrong" to every
@@ -664,8 +665,9 @@ def rule_headline(result: SampleResult) -> str:
                      "by side.".format(", ".join(sorted(disagreeing, key=natural_key))))
     unmeasured = result.unmeasured()
     if unmeasured:
-        parts.append("{0} metric(s) could not be measured and are reported as "
-                     "absent, not as normal.".format(len(unmeasured)))
+        parts.append("{0} could not be measured and {1} reported as absent, not "
+                     "as normal.".format(plural(len(unmeasured), "metric"),
+                                         "is" if len(unmeasured) == 1 else "are"))
     return " ".join(parts)
 
 

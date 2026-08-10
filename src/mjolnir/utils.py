@@ -281,6 +281,18 @@ _SEQ_EXTENSIONS = (".fasta", ".fa", ".fna", ".ffn", ".fsa", ".seq",
                    ".fastq", ".fq", ".contigs", ".scaffolds")
 
 
+def plural(count: int, singular: str, many: str = "") -> str:
+    """``"1 metric"`` / ``"3 metrics"`` — the count and its noun, agreeing.
+
+    Worth a helper rather than an f-string with ``(s)``: this text lands on the
+    front page of a clinical report, and "1 metric(s) could not be measured"
+    reads like machine output at the exact moment the reader is deciding how much
+    to trust the machine.
+    """
+    word = singular if abs(count) == 1 else (many or singular + "s")
+    return "{0} {1}".format(count, word)
+
+
 def safe_name(text: str) -> str:
     """Filesystem/column-safe token."""
     keep: List[str] = []

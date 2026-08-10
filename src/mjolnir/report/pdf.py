@@ -1091,8 +1091,20 @@ def _drug_table(rl: Dict[str, Any], styles: Dict[str, Any], result: SampleResult
     header = ["Drug", "Determinant", "Mjolnir call", "WHO grade"]
     header += [c.replace("WHO v2", "WHO") for c in CATALOGUES]
     header += ["Flags"]
-    widths = [66.0, 112.0, 104.0, 74.0, 24.0, 30.0, 24.0, 89.0]
-    data = [[Paragraph("<b>{0}</b>".format(_xml(h)), styles["cell"]) for h in header]]
+    # The three catalogue columns hold a single glyph, so they are narrow - but
+    # narrow enough to break their own headers mid-word ("MTBs/eq"), which reads
+    # as a rendering fault and undermines the table it heads. They get enough
+    # width for their labels at a smaller size, taken from Determinant and Flags.
+    widths = [66.0, 100.0, 104.0, 72.0, 30.0, 38.0, 28.0, 85.0]
+    catalogue_columns = range(4, 4 + len(CATALOGUES))
+    header_cells = []
+    for index, name in enumerate(header):
+        if index in catalogue_columns:
+            header_cells.append(Paragraph(
+                '<b><font size="5.6">{0}</font></b>'.format(_xml(name)), styles["cell"]))
+        else:
+            header_cells.append(Paragraph("<b>{0}</b>".format(_xml(name)), styles["cell"]))
+    data = [header_cells]
 
     rows = T.drug_rows(result)
     calls = sorted(result.drugs, key=lambda d: T.drug_order(d.drug))
@@ -1152,21 +1164,41 @@ def _drug_table(rl: Dict[str, Any], styles: Dict[str, Any], result: SampleResult
     return table
 
 
+def _leaded(rl: Dict[str, Any], base: Any, size: float, leading: float) -> Any:
+    """*base* at a different size, with leading that actually fits it.
+
+    reportlab does not derive leading from an inline ``<font size=...>``, so text
+    larger than its paragraph style overprints the line above it.
+    """
+    style = rl["ParagraphStyle"]("chip{0:.0f}".format(size * 10), parent=base)
+    style.fontSize = size
+    style.leading = leading
+    return style
+
+
 def _status_chip(rl: Dict[str, Any], styles: Dict[str, Any], label: str, value: str,
                  palette: Dict[str, str], width: float = CONTENT_WIDTH) -> Any:
     Paragraph, Table, TableStyle = rl["Paragraph"], rl["Table"], rl["TableStyle"]
     colors = rl["colors"]
-    table = Table([[Paragraph(
-        '<font size="7" color="{0}">{1}</font><br/>'
-        '<b><font size="12">{2}</font></b>'.format(
-            palette["ink"], _xml(label), _xml(value)), styles["cell"])]],
+    # Two rows rather than one paragraph with a <br/>. The value is 12pt and the
+    # cell style's leading is set for 6-7pt body text, so a single paragraph laid
+    # the two lines on top of each other - the headline verdict of the whole
+    # report, rendered illegibly.
+    label_style = _leaded(rl, styles["cell"], size=7.0, leading=8.6)
+    value_style = _leaded(rl, styles["cell"], size=12.0, leading=13.8)
+    table = Table(
+        [[Paragraph('<font color="{0}">{1}</font>'.format(palette["ink"], _xml(label)),
+                    label_style)],
+         [Paragraph("<b>{0}</b>".format(_xml(value)), value_style)]],
         colWidths=[width], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(palette["fill"])),
         ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor(palette["border"])),
         ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor(palette["ink"])),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (0, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (0, 0), 0),
+        ("TOPPADDING", (0, 1), (0, 1), 0),
+        ("BOTTOMPADDING", (0, 1), (0, 1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
     ]))
     return table

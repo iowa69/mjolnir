@@ -51,7 +51,7 @@ from mjolnir.records import (CALL_NO_CALL, CALL_UNCERTAIN, MIXTURE_NOT_ASSESSED,
                              VALIDITY_VALID, Check, CohortResult, SampleResult,
                              SpeciesCall)
 from mjolnir.utils import (MjolnirError, looks_like_sequence, natural_key,
-                           percentage, round_or_none, to_jsonable)
+                           percentage, plural, round_or_none, to_jsonable)
 
 # ---------------------------------------------------------------------------
 # Limits
@@ -935,8 +935,10 @@ def rule_summary_cohort(cohort: CohortResult) -> Tuple[str, str]:
                     "epidemiological linkage on its own.")
     uncompared = [p for p in cohort.pairs if p.snps is None]
     if uncompared:
-        body.append("{0} pair(s) could not be compared and are absent from the "
-                    "matrix rather than being scored as zero.".format(len(uncompared)))
+        body.append("{0} could not be compared and {1} absent from the matrix "
+                    "rather than being scored as zero.".format(
+                        plural(len(uncompared), "pair"),
+                        "is" if len(uncompared) == 1 else "are"))
     for caveat in cohort.caveats:
         body.append(caveat if caveat.endswith(".") else caveat + ".")
     return headline, " ".join(body)
