@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Run outputs and downloaded databases are never committed.
+runs/
+out/
+*.bam
+*.bai
+*.vcf
+*.vcf.gz
+*.fastq
+*.fastq.gz
+*.fq.gz
+src/mjolnir/db/cache/

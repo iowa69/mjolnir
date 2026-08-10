@@ -1,0 +1,38 @@
+MIT License
+
+Copyright (c) 2026 Mjolnir developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Hydra does not redistribute third-party sequence databases. Each database it
+installs remains under its own licence and must be cited separately:
+
+  NCBI AMRFinderPlus  public domain   Feldgarden et al. 2021, Sci Rep 11:12728
+  CARD                academic use    Alcock et al. 2023, Nucleic Acids Res 51:D690
+  ResFinder           Apache-2.0      Bortolaia et al. 2020, JAC 75:3491
+  VFDB                academic use    Liu et al. 2022, Nucleic Acids Res 50:D912
+  ARG-ANNOT           academic use    Gupta et al. 2014, AAC 58:212
+  MEGARes             academic use    Bonin et al. 2023, Nucleic Acids Res 51:D744
+  PlasmidFinder       Apache-2.0      Carattoli et al. 2014, AAC 58:3895
+  PubMLST             open data       Jolley, Bray & Maiden 2018, Wellcome Open Res 3:124
+  Kleborate schemes   GPL-3.0         Lam et al. 2021, Nat Commun 12:4188
+
+Run `hydra db info NAME` for the source and licence of any installed database.
