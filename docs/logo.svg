@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Mjolnir">
+  <title>Mjolnir</title>
+  <defs>
+    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5b7fb9"/>
+      <stop offset="100%" stop-color="#2a4a7f"/>
+    </linearGradient>
+    <linearGradient id="haft" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8a6a4a"/>
+      <stop offset="100%" stop-color="#5e452e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- haft -->
+  <rect x="55" y="56" width="10" height="50" rx="3" fill="url(#haft)"/>
+  <rect x="52" y="98" width="16" height="8" rx="3" fill="#3f2f20"/>
+
+  <!-- head -->
+  <rect x="22" y="26" width="76" height="34" rx="6" fill="url(#head)"/>
+  <rect x="22" y="26" width="76" height="34" rx="6" fill="none" stroke="#1b3559" stroke-width="2"/>
+  <line x1="34" y1="26" x2="34" y2="60" stroke="#1b3559" stroke-width="2" opacity="0.55"/>
+  <line x1="86" y1="26" x2="86" y2="60" stroke="#1b3559" stroke-width="2" opacity="0.55"/>
+
+  <!-- an acid-fast bacillus struck across the head: the thing being typed -->
+  <g transform="rotate(-24 60 43)">
+    <rect x="41" y="39" width="38" height="9" rx="4.5" fill="#e8503a"/>
+    <rect x="41" y="39" width="38" height="9" rx="4.5" fill="none" stroke="#fdf6f4" stroke-width="1.6"/>
+    <line x1="49" y1="39" x2="49" y2="48" stroke="#fdf6f4" stroke-width="1.4" opacity="0.85"/>
+    <line x1="57" y1="39" x2="57" y2="48" stroke="#fdf6f4" stroke-width="1.4" opacity="0.85"/>
+    <line x1="65" y1="39" x2="65" y2="48" stroke="#fdf6f4" stroke-width="1.4" opacity="0.85"/>
+    <line x1="72" y1="39" x2="72" y2="48" stroke="#fdf6f4" stroke-width="1.4" opacity="0.85"/>
+  </g>
+</svg>

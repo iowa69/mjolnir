@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="Mjolnir" width="110" height="110">
+</p>
+
 <h1 align="center">Mjolnir</h1>
+
+<p align="center"><em>Mycobacterial Junction and Omics Locus Nucleotide Identification for Resistance</em></p>
 
 <p align="center">
   <strong>Resistance, lineage, species and contamination for the M. tuberculosis
