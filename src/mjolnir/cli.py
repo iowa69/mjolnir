@@ -290,7 +290,6 @@ def build_options(args: Any, *, callable_regions: bool = False) -> RunOptions:
         resistance=bool(getattr(args, "resistance", True)),
         contamination=bool(getattr(args, "contamination", True)),
         interpret=bool(getattr(args, "use_llm", True)),
-        keep_bam=bool(getattr(args, "keep_temp", False)),
     )
 
 

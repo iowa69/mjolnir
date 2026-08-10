@@ -1,0 +1,87 @@
+cff-version: 1.2.0
+title: "Mjolnir: resistance, lineage, species and contamination calling for the Mycobacterium tuberculosis complex and non-tuberculous mycobacteria"
+message: "If you use Mjolnir, please cite it and the catalogues and reference databases it called from - 'mjolnir db list' prints each one's version, licence and citation, and every report Mjolnir writes carries the same list."
+type: software
+authors:
+  - given-names: "Mjolnir contributors"
+    affiliation: ""
+repository-code: "https://github.com/iowa69/mjolnir"
+url: "https://github.com/iowa69/mjolnir"
+abstract: >-
+  Mjolnir calls species, lineage, drug resistance and contamination for the
+  Mycobacterium tuberculosis complex and for non-tuberculous mycobacteria, from
+  Illumina reads, ONT reads or assemblies, in one command and one report.
+  Resistance is called independently from the WHO catalogue of mutations
+  (2nd edition), MTBseq's resistance-mediating lists and tbdb, then reconciled
+  with WHO as the anchor; a variant WHO does not grade but another catalogue
+  calls resistant is reported as resistant outside the WHO catalogue rather than
+  dropped or promoted. Species identification is ANI-based rather than taxonomic
+  read classification, because MTBC members are not at species rank in NCBI
+  taxonomy; lineage comes from SNP barcodes read off a direct pileup and is
+  reported with its barcode support, since BCG and the animal lineages rest on
+  as few as five defining SNPs. Contamination is reported as a sample-validity
+  verdict from the signals that can honestly be measured in mycobacteria.
+  Absence of a resistance determinant is reported as absence, never as
+  susceptibility, and every threshold in the tool carries the document it came
+  from.
+keywords:
+  - tuberculosis
+  - mycobacteria
+  - nontuberculous mycobacteria
+  - antimicrobial resistance
+  - lineage typing
+  - contamination
+  - outbreak investigation
+  - genomics
+license: MIT
+version: 0.1.0
+date-released: "2026-08-10"
+references:
+  - type: report
+    title: "Catalogue of mutations in Mycobacterium tuberculosis complex and their association with drug resistance, 2nd edition"
+    authors:
+      - name: "World Health Organization"
+    institution:
+      name: "World Health Organization"
+    year: 2023
+    notes: "WHO-UCN-TB-2023.7. The anchor catalogue; its data files are under ODC-By v1.0, the report PDF under CC BY-NC-SA 3.0 IGO."
+    url: "https://www.who.int/publications/i/item/9789240082410"
+  - type: article
+    title: "Integrating informatics tools and portable sequencing technology for rapid detection of resistance to anti-tuberculous drugs"
+    authors:
+      - family-names: "Phelan"
+        given-names: "Jody E."
+      - family-names: "O'Sullivan"
+        given-names: "Denise M."
+      - family-names: "Machado"
+        given-names: "Diana"
+    journal: "Genome Medicine"
+    volume: 11
+    year: 2019
+    notes: "tbdb / TB-Profiler library: mutations.csv, barcode.bed and mask.bed."
+  - type: article
+    title: "MTBseq: a comprehensive pipeline for whole genome sequence analysis of Mycobacterium tuberculosis complex isolates"
+    authors:
+      - family-names: "Kohl"
+        given-names: "Thomas A."
+      - family-names: "Utpatel"
+        given-names: "Christian"
+      - family-names: "Schleusener"
+        given-names: "Viola"
+    journal: "PeerJ"
+    volume: 6
+    year: 2018
+    notes: "One of the two tools Mjolnir consolidates, and the source of its resistance-mediating lists and NTM references."
+  - type: article
+    title: "Deciphering the biology of Mycobacterium tuberculosis from the complete genome sequence"
+    authors:
+      - family-names: "Cole"
+        given-names: "Stewart T."
+      - family-names: "Brosch"
+        given-names: "Roland"
+      - family-names: "Parkhill"
+        given-names: "Julian"
+    journal: "Nature"
+    volume: 393
+    year: 1998
+    notes: "H37Rv, GenBank NC_000962.3 - the coordinate system every MTBC catalogue Mjolnir reads is written against."

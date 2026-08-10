@@ -175,7 +175,6 @@ class RunOptions:
     resistance: bool = True
     contamination: bool = True
     interpret: bool = True
-    keep_bam: bool = True
 
     def __post_init__(self) -> None:
         if self.kraken2_report is not None:

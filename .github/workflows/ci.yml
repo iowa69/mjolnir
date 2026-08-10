@@ -1,0 +1,171 @@
+name: CI
+
+# The unit suite must pass on a runner with none of the bioinformatics stack:
+# no bwa-mem2, no samtools, no WHO catalogue, no model host. That is the point
+# of it - every stage that needs a real tool or a real database raises
+# MjolnirError naming what to install or fetch, and a run that cannot measure
+# something must say so rather than return a clean-looking result. The conda job
+# below is where the tools are actually present.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor the code is written to - no PEP 604 unions at
+        # runtime, no match statements - and 3.13 is where the next breakage
+        # will appear first. The middle one is what most people have.
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[all] pytest pyflakes
+      - name: Lint
+        run: python -m pyflakes src/mjolnir tests
+      - name: Test
+        run: python -m pytest tests -q
+      - name: CLI smoke test
+        run: |
+          set -euo pipefail
+          mjolnir --version
+          mjolnir --help
+          mjolnir run --help
+          mjolnir cohort --help
+          mjolnir report --help
+          mjolnir db --help
+          mjolnir doctor --help
+          mjolnir db list
+          mjolnir db info tbdb who-catalogue-v2
+      - name: A bare command must print its help and fail, not do nothing
+        run: |
+          set +e
+          mjolnir > /dev/null 2>&1
+          test "$?" -eq 1 || { echo "bare 'mjolnir' should exit 1"; exit 1; }
+          mjolnir db > /dev/null 2>&1
+          test "$?" -eq 1 || { echo "'mjolnir db' with no action should exit 1"; exit 1; }
+      - name: doctor must report honestly on a runner with nothing installed
+        run: |
+          set +e
+          mjolnir doctor --no-llm
+          code=$?
+          set -e
+          # Exit 1 is the correct answer here: no mapper, no caller, no
+          # databases. Exit 0 would mean doctor is not checking what it claims
+          # to check, and an operator would read "fine" off a machine that
+          # cannot call a single variant.
+          test "$code" -eq 1 || { echo "doctor exited $code on a bare runner; expected 1"; exit 1; }
+      - name: The shipped playbooks and thresholds must survive installation
+        run: |
+          python - <<'PY'
+          from mjolnir import config
+          from mjolnir.agent.observation import PLAYBOOK_DIR, playbook_named
+
+          # A wheel that ships no playbooks runs with no organism knowledge, and
+          # a missing directory is indistinguishable from an organism that has
+          # no playbook - the failure is silent unless something asserts here.
+          shipped = sorted(p.name for p in PLAYBOOK_DIR.glob("*.yaml"))
+          assert shipped == ["mtbc.yaml", "ntm.yaml"], shipped
+          for name in ("mtbc", "ntm"):
+              assert playbook_named(name).name, name
+
+          # Every number the report prints must arrive with the document it came
+          # from. An unsourced threshold is the failure this project exists to
+          # avoid, so it fails the build rather than reaching a clinician.
+          unsourced = [t.name for t in config.all_thresholds() if not t.source.strip()]
+          assert not unsourced, unsourced
+          print("%d thresholds, %d of them with unverified citations"
+                % (len(config.THRESHOLDS), len(config.unverified())))
+          PY
+
+  package:
+    name: sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - name: The data files must be in the artefacts, not only in the checkout
+        run: |
+          python - <<'PY'
+          import pathlib, tarfile, zipfile
+
+          dist = pathlib.Path("dist")
+          wheel = next(iter(sorted(dist.glob("*.whl"))))
+          sdist = next(iter(sorted(dist.glob("*.tar.gz"))))
+
+          in_wheel = set(zipfile.ZipFile(wheel).namelist())
+          with tarfile.open(sdist) as tar:
+              in_sdist = {"/".join(n.split("/")[1:]) for n in tar.getnames()}
+
+          # The playbooks carry the organism-specific reading the agent works
+          # from. They are package data, not source, so they leave the wheel the
+          # moment package-data stops listing them - and nothing else notices.
+          for name in ("mtbc.yaml", "ntm.yaml"):
+              path = "mjolnir/agent/playbooks/%s" % name
+              assert path in in_wheel, "%s missing from %s" % (path, wheel.name)
+              assert "src/" + path in in_sdist, "%s missing from %s" % (path, sdist.name)
+          for name in ("LICENSE", "README.md", "CITATION.cff"):
+              assert name in in_sdist, "%s missing from %s" % (name, sdist.name)
+          print("wheel: %d files; sdist: %d files" % (len(in_wheel), len(in_sdist)))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+  conda:
+    name: conda build (bioconda toolchain)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          activate-environment: build
+      - name: Install conda-build
+        run: conda install -y conda-build
+      - name: Build the recipe
+        # The recipe's own test section is the real check: it imports every
+        # module, exercises the CLI, and runs each external tool Mjolnir shells
+        # out to, so a tool that is missing or has changed its version flag
+        # fails here rather than four stages into someone's first run.
+        run: |
+          conda build conda-recipe \
+            --channel conda-forge \
+            --channel bioconda \
+            --channel-priority strict \
+            --output-folder "$RUNNER_TEMP/conda-bld"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conda-package
+          path: ${{ runner.temp }}/conda-bld/noarch/*.conda
+          if-no-files-found: warn

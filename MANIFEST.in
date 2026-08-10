@@ -1,0 +1,18 @@
+include LICENSE
+include README.md
+include CITATION.cff
+include environment.yml
+# The playbooks are the agent's organism knowledge and the data directory holds
+# the shipped reference tables. Both are package data, not source: leave them
+# out of the sdist and the tool builds cleanly and then runs with no knowledge.
+recursive-include src/mjolnir/data *
+recursive-include src/mjolnir/agent/playbooks *.yaml
+# The README tells users to run these; ship them in the sdist so they are there.
+recursive-include tests *.py
+recursive-include conda-recipe *.yaml
+# config.py cites this document as the source of every threshold that is a
+# Mjolnir policy choice rather than a published number, so the citation should
+# resolve inside the distribution rather than pointing at a repository the
+# reader may not have.
+include docs/superpowers/specs/2026-08-10-mjolnir-design.md
+global-exclude __pycache__ *.py[cod]
