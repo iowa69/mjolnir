@@ -1,0 +1,45 @@
+# A development environment with the whole stack present, so that `mjolnir
+# doctor` comes back clean on the tools and the only thing left to obtain is the
+# databases (`mjolnir db fetch`). Channel order matters: conda-forge first, then
+# bioconda, which is what bioconda itself requires.
+name: mjolnir
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  # Runtime
+  - pandas>=1.3
+  - numpy>=1.20
+  # The WHO catalogue exists only as .xlsx - the repository's .txt master file
+  # is missing Streptomycin and four genes - so this is not optional.
+  - openpyxl>=3.0
+  - pysam>=0.19          # pileups: barcode sites and allele fractions
+  - scipy>=1.7           # cohort clustering
+  - reportlab>=3.6       # the PDF
+  - matplotlib-base>=3.5 # the figures in it
+  - pyyaml>=5.1          # optional: the agent falls back to a subset reader
+  # External tools the pipeline shells out to
+  - bwa-mem2>=2.2        # Illumina mapping (plain bwa is an accepted fallback)
+  - minimap2>=2.24       # ONT mapping, and the assembly comparison path
+  - samtools>=1.15
+  - bcftools>=1.15       # Illumina calling, and the ONT fallback caller
+  - freebayes>=1.3
+  - mash>=2.3            # fast first-pass species screen
+  - skani>=0.2           # ANI-based species identification
+  - seqkit>=2.3
+  # Development
+  - pytest>=7
+  - pyflakes
+  # Not listed, deliberately:
+  #   clair3  - the preferred ONT caller, left out because it pulls a full
+  #             PyTorch stack into every environment. Add it with
+  #             `conda install -c bioconda clair3` if you sequence on ONT;
+  #             without it ONT calling falls back to bcftools, which is
+  #             specifically weak on indels, and the report says so.
+  #   kraken2 - useful only with a mycobacterial pangenome index. Against a
+  #             standard or PlusPF index the screen is uninformative for
+  #             mycobacteria (measured M. tuberculosis read sensitivity 0.0731),
+  #             and Mjolnir reports it as uninformative rather than as a clean
+  #             result, so nothing is gained by installing it unprepared.
