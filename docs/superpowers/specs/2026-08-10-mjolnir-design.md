@@ -179,6 +179,39 @@ Each of these is a verified failure mode, not a hypothetical:
 - No coordinates exist for `<gene>_deletion` and pooled LoF graded-variants.
   These are matched by rule, not by coordinate.
 
+### 5.2b Traps in MTBseq's ResSeq list
+
+`var/res/MTB_Resistance_Mediating.txt` is 25 columns and **1,696 data rows**
+(1,691 SNP, 3 `del`, 2 `ins`), and every one of these will silently corrupt a
+loader that assumes the obvious:
+
+- **It is latin-1, not UTF-8.** Reading it as UTF-8 raises `UnicodeDecodeError`
+  at byte `0x98`, offset 7324.
+- **1,195 of 1,696 rows are minus-strand**, and the file stores
+  gene-orientation alleles. MTBseq applies a per-base complement
+  (`tr/ATGC/TACG/`) unless the direction column is `+` — a **complement, not a
+  reverse-complement**. Loading the alleles as written mismatches the majority
+  of the file.
+- **MTBseq's own indel annotation is dead code.** The file writes lowercase
+  `del`/`ins`; `parse_variant_infos` tests `eq 'Del'` and `eq 'Ins'`, so all
+  five indel rows are silently dropped — including the `fbiC` deletion
+  (delamanid) and an `embA` indel (ethambutol). Mjolnir loads them.
+- **Columns 22–24 — reference PMID, "High Confidence SNP" (224 `yes` vs 1,472
+  `-`), and comment — are parsed and then never read**, so MTBseq weights every
+  hit equally. Mjolnir carries the confidence flag and the PMID into the report.
+- One "antibiotic" value is a drug *class*, `fluoroquinolones (FQ)` (22 rows),
+  and three more are multi-drug strings. Drug names need normalising, not
+  splitting on whitespace.
+- 238 rows are phylogenetic markers (`/phylo/`), not resistance — they must not
+  reach a drug call.
+- `pncA` alone accounts for 891 of the 1,458 resistance rows, so a bug in one
+  gene's handling skews the whole list.
+
+And the list is **not the WHO catalogue**: its provenance is mixed (YADON,
+WHO2021, WHO2018, SONNENKALB, CRyPTIC, WALKER, plus ~40 bare DOIs), which is
+exactly why §5.5 makes WHO the anchor rather than treating the three sources as
+peers.
+
 ### 5.3 Matching
 
 WHO's own documented protocol is **coordinate-based**, not name-based: exact
@@ -424,10 +457,21 @@ the way its documentation implies**. Verified from the v1.1.0 source:
 - **No mapping-quality filtering happens at any stage.** `samtools mpileup -B -A -x`
   passes no `-q`, and `-A` re-includes anomalous read pairs. Adding a MAPQ filter
   changes calls in repetitive and PE/PPE regions relative to MTBseq.
-- `samtools mpileup` **caps depth at 250** by default and MTBseq never passes
-  `-d`, so high-depth samples are downsampled before frequencies are computed.
+- The mpileup depth cap is **8000×, not 250×**: samtools 1.6 `bam_plcmd.c`
+  raises `max_depth` to `8000 / n_samples` when the requested cap is lower, and
+  with one BAM that is 8000. (An earlier reading of this said 250; it was wrong.)
+- **An unambiguous call requires a per-strand minimum** — `cov_f >= mincovf`
+  *and* `cov_r >= mincovr` on the winning allele, plus `freq >= minfreq` and
+  `qual20 >= minphred20`. Almost no modern caller enforces a per-strand floor;
+  dropping it changes calls at low coverage and in homopolymers, so
+  `--mtbseq-compat` must implement it.
 - `--minbqual` is a **base**-quality threshold, despite `--help` calling it
-  "minimum positional mapping quality".
+  "minimum positional mapping quality". The flag is spelled **`--minphred20`**
+  in the source `Getopt` spec, though the manual documents `--minphred`.
+- **A single-step run exits status 1 even on success** — every step ends
+  `if($continue == 0 && $step ne 'TBfull') { exit 1; }`. Any wrapper treating
+  non-zero as failure misreports MTBseq.
+- MTBseq performs **no trimming, adapter removal or read QC** at any point.
 - `--all_vars` is documented but hard-coded off in `TBvariants.pm`/`TBstats.pm`
   and hard-coded on in `TBjoin.pm`/`TBstrains.pm`.
 - `TBjoin`'s discovery regex uses `$micovf` where it should use `$micovr`, so a

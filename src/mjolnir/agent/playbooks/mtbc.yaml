@@ -1,0 +1,193 @@
+# The M. tuberculosis complex reading.
+#
+# This file is knowledge, not code: which drugs a clinician needs told about,
+# which caveats always apply to this organism, and the sentences that must
+# appear whatever the model writes. Editing it changes what the report says
+# without touching Python. It is validated at load time (agent/observation.py),
+# so a gate whose default is not among its own options fails before a run
+# starts rather than three hours into one.
+#
+# Sources for the clinical claims are in docs/superpowers/specs/
+# 2026-08-10-mjolnir-design.md sections 5, 6 and 7, and the numeric thresholds
+# they refer to are registered in mjolnir/config.py with their citations.
+
+name: mtbc
+organism: Mycobacterium tuberculosis complex
+
+applies_to:
+  complex: ["MTBC", "M. tuberculosis complex"]
+  species:
+    - Mycobacterium tuberculosis
+    - Mycobacterium bovis
+    - Mycobacterium caprae
+    - Mycobacterium orygis
+    - Mycobacterium africanum
+    - Mycobacterium microti
+    - Mycobacterium pinnipedii
+    - Mycobacterium canettii
+
+audience: >
+  A TB clinician or clinical microbiologist deciding a regimen, who may not be
+  a bioinformatician. Explain a metric in one clause where it changes the
+  reading, and never at the cost of the finding itself.
+
+describe: >
+  Genotypic resistance for the M. tuberculosis complex, anchored on the WHO
+  mutation catalogue v2 and reconciled with MTBseq's list and tbdb. WHO grades
+  are the call wherever WHO grades the variant; a resistance determinant that
+  only another catalogue knows is surfaced as "R (outside WHO catalogue)" and
+  is never presented as equivalent to a WHO Group 1 call.
+
+headline_focus: >
+  The drugs with a resistance determinant, then the sample-validity verdict.
+  If there are none, say how many drugs were evaluated and that no determinant
+  was detected in them.
+
+drugs:
+  - drug: Rifampicin
+    priority: 1
+    why: >
+      The definition of MDR-TB and the single most consequential call in the
+      report. Most resistance sits in the rpoB RRDR (codons 426-452); the four
+      borderline mutations Leu430Pro, His445Asn, His445Ser and Ile491Phe are
+      Group 1 by rule and are missed by some phenotypic methods.
+  - drug: Isoniazid
+    priority: 1
+    why: >
+      katG loss-of-function and the inhA promoter are separate mechanisms with
+      different implications: inhA c.-15C>T predicts low-level isoniazid
+      resistance and cross-resistance to ethionamide, katG Ser315Thr predicts
+      high-level resistance.
+  - drug: Pyrazinamide
+    priority: 2
+    why: >
+      pncA is unusually permissive - resistance arises from many private
+      loss-of-function variants rather than a handful of hotspots - so an
+      absence of a catalogued pncA variant is weaker reassurance here than for
+      any other drug. BCG is intrinsically pyrazinamide-resistant.
+  - drug: Ethambutol
+    priority: 3
+    why: embB codon 306 and neighbours; a companion drug in the standard regimen.
+  - drug: Levofloxacin
+    priority: 1
+    why: >
+      The fluoroquinolone backbone of an MDR regimen. gyrA/gyrB determinants are
+      graded per drug, and levofloxacin and moxifloxacin do not always agree.
+  - drug: Moxifloxacin
+    priority: 1
+    why: >
+      Graded separately from levofloxacin by WHO; some gyrA variants confer
+      resistance at the levofloxacin breakpoint but not at the moxifloxacin one.
+  - drug: Bedaquiline
+    priority: 1
+    why: >
+      Group A, and the drug most at risk from an unrecognised epistatic
+      interaction: an mmpL5 loss-of-function abrogates the effect of Rv0678
+      variants, so an Rv0678 call must be read with mmpL5 in view.
+  - drug: Linezolid
+    priority: 1
+    why: Group A; rrl and rplC determinants are rare, so most calls are absences.
+  - drug: Clofazimine
+    priority: 2
+    why: Shares the Rv0678 mechanism with bedaquiline; cross-resistance is expected.
+  - drug: Delamanid
+    priority: 2
+    why: >
+      Nitroreductase pathway; cross-resistant with pretomanid. On ONT data a
+      delamanid call arising from an fbiC tandem-repeat deletion is suppressed,
+      because such calls were 47.2% of all discordant drug classifications in
+      the 508-isolate ONT-versus-Illumina comparison.
+  - drug: Pretomanid
+    priority: 2
+    why: Same pathway as delamanid, and cross-resistance runs both ways.
+  - drug: Amikacin
+    priority: 3
+    why: >
+      rrs 1401/1402/1484 determinants. An eis coding loss-of-function abrogates
+      eis promoter mutations, which is applied as a suppression step and stated.
+  - drug: Kanamycin
+    priority: 3
+    why: eis promoter and rrs; the same eis epistasis applies.
+  - drug: Streptomycin
+    priority: 4
+    why: >
+      rpsL, rrs and gid. Present in the WHO xlsx and absent from the repository's
+      .txt master file, which is why Mjolnir reads the xlsx.
+  - drug: Ethionamide
+    priority: 4
+    why: >
+      Shares the inhA promoter with isoniazid, and the same variant is graded
+      differently for the two drugs - inhA c.-154G>A is Group 1 for isoniazid
+      and Group 2 for ethionamide.
+
+always_caveats:
+  - >
+    Absence of a catalogued determinant is an absence of evidence, not a
+    prediction of susceptibility. Phenotypic drug-susceptibility testing remains
+    the arbiter, and a novel mechanism is invisible to a catalogue by definition.
+  - >
+    The consensus rule inherits the WHO catalogue's blind spots by construction:
+    where WHO has not graded a variant, Mjolnir cannot grade it either, and a
+    determinant known only to another catalogue is reported as outside the WHO
+    catalogue rather than as an equivalent call.
+  - >
+    A catalogue-version mismatch between two installations changes calls, so the
+    version and checksum of every catalogue used are printed in the annex.
+  - >
+    Lineage is called from lineage-defining SNP barcodes, never from a taxonomic
+    read classifier: MTBC members are later heterotypic synonyms of
+    M. tuberculosis at 99.21-99.92% ANI and cannot be separated by ANI at all.
+
+must_state:
+  - >
+    Where no determinant was found, the finding is "no resistance determinant
+    detected" for those drugs, and that this is not a statement of susceptibility.
+  - >
+    The sample-validity verdict, and if it is anything other than valid, what
+    that means for the calls above it.
+  - >
+    Any drug whose target regions were not callable, because an unevaluated drug
+    and a drug with nothing found are different findings.
+  - >
+    Whether any call was suppressed by an epistasis rule (mmpL5 over Rv0678, eis
+    coding loss-of-function over the eis promoter), and which rule did it.
+  - >
+    For a BCG or animal-lineage call, the number of barcode sites supporting it:
+    La1.2.BCG rests on five defining SNPs, the thinnest evidence of any major
+    taxon in the scheme, and a coverage gap over a handful of positions is
+    enough to move the call.
+  - >
+    For a BCG call, that BCG carries intrinsic pyrazinamide resistance
+    independent of any pncA variant.
+
+must_not_say:
+  - >
+    That the isolate is susceptible, sensitive, or that a drug will work,
+    however the finding is hedged.
+  - >
+    That the sample is clean, pure, or free of contamination on the strength of
+    a screen that was not informative, or of a metric that was not measured.
+  - >
+    That the strain is fully drug-susceptible, pan-susceptible, or wild-type.
+  - >
+    Any species or lineage name that the barcode and ANI evidence in the
+    observation did not produce.
+  - >
+    A treatment recommendation, a regimen, or a dose. The report states findings;
+    the prescriber decides.
+
+gates:
+  - id: headline_emphasis
+    question: >
+      Given the drug calls and the sample-validity verdict, what does the front
+      page of this report have to lead with?
+    options:
+      - resistance_findings
+      - sample_validity
+      - unevaluable_targets
+      - species_uncertainty
+    default: sample_validity
+    describe: >
+      Defaults to sample_validity because a finding read off an invalid sample
+      is the error that reaches a patient, and leading with the validity verdict
+      is the conservative failure.

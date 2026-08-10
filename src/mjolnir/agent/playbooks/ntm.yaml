@@ -1,0 +1,133 @@
+# The non-tuberculous mycobacteria reading.
+#
+# NTM is not a reference swap. None of the three resistance catalogues covers
+# these organisms, so every call here comes from a named paper for a named
+# species-drug pair, and where no evidence base exists the report says so
+# instead of guessing. That refusal is the substance of this file.
+#
+# This playbook is also the default when the species call did not resolve: the
+# MTBC reading talks about WHO grades and lineage barcodes, none of which apply
+# to an unidentified mycobacterium, and this one is the one that knows how to
+# say "no evidence base exists for this pair".
+
+name: ntm
+organism: Non-tuberculous mycobacteria
+
+applies_to:
+  complex: ["MAC", "M. abscessus complex"]
+  species:
+    - Mycobacteroides abscessus
+    - Mycobacterium chimaera
+    - Mycobacterium intracellulare
+    - Mycobacterium avium
+    - Mycobacterium fortuitum
+    - Mycobacterium kansasii
+    - Mycobacterium malmoense
+    - Mycobacterium xenopi
+
+audience: >
+  A clinical microbiologist or infection specialist managing an NTM isolate,
+  who needs to know what was examined, what was found, and - just as often -
+  which drug had no evidence base to examine at all.
+
+describe: >
+  Genotypic resistance for non-tuberculous mycobacteria, implemented directly
+  from the literature per organism rather than from a catalogue: erm(41)
+  sequevar typing and rrl for macrolides, rrs for amikacin. Species
+  identification is ANI-based against a curated mycobacterial reference set,
+  and within the M. avium complex the chimaera / intracellulare / avium
+  boundary needs marker SNPs beside the ANI.
+
+headline_focus: >
+  The species and how far the evidence actually resolves, then the macrolide
+  and amikacin findings, then any drug for which no evidence base exists.
+
+drugs:
+  - drug: Clarithromycin
+    priority: 1
+    why: >
+      The macrolide backbone of NTM therapy, and the one call where genotype
+      genuinely changes management. In M. abscessus the erm(41) T28 sequevar
+      predicts inducible macrolide resistance and C28 predicts susceptibility;
+      a truncated erm(41), as in subsp. massiliense, removes the inducible
+      mechanism. Acquired rrl 2058/2059 mutations give constitutive resistance
+      in M. abscessus and across the M. avium complex, and they override the
+      erm(41) reading.
+  - drug: Amikacin
+    priority: 1
+    why: >
+      rrs position 1408 is the well-supported determinant; the neighbouring
+      positions are weaker evidence and are graded uncertain by design rather
+      than being reported as equivalent.
+  - drug: Azithromycin
+    priority: 2
+    why: >
+      Shares the macrolide mechanism with clarithromycin. The erm(41) and rrl
+      evidence is published for clarithromycin, so an azithromycin statement is
+      an extrapolation and must be labelled as one.
+
+always_caveats:
+  - >
+    No mutation catalogue covers these organisms. Every finding here rests on a
+    named study for a named species-drug pair, and any pair without one is
+    reported as having no evidence base rather than as susceptible.
+  - >
+    erm(41) predicts inducible resistance. A genotypically inducible isolate can
+    look susceptible on a short incubation, and the extended-incubation
+    phenotypic result is the one that matters.
+  - >
+    Within the M. avium complex, ANI alone does not separate M. chimaera from
+    M. intracellulare reliably; where the call rests on ANI without marker SNPs
+    the report says the complex, not the species.
+  - >
+    There is no published R10.4.1-era ONT validation of NTM species
+    identification or of NTM genotypic drug-susceptibility testing, and no
+    ONT-specific homopolymer-error study for pncA, rrs or rrl in mycobacteria.
+    An NTM call from ONT reads therefore carries an explicit not-validated-on-
+    this-platform caveat, and the homopolymer concern is an inference from the
+    general error mode rather than a measured mycobacterial result.
+
+must_state:
+  - >
+    The species, and how far the evidence resolves - genus, complex or species -
+    with the ANI and the aligned fraction that support it. A high ANI over a
+    small aligned fraction is not a species call.
+  - >
+    For every drug in this playbook with no implemented evidence base for this
+    species, that no genotypic prediction is made for it, and that this is an
+    absence of evidence rather than a prediction of susceptibility.
+  - >
+    For a macrolide finding in M. abscessus, which erm(41) sequevar was seen and
+    whether the gene was intact, because the inducible and constitutive
+    mechanisms lead to different treatment decisions.
+  - >
+    That phenotypic susceptibility testing with the recommended extended
+    incubation remains necessary for macrolides.
+
+must_not_say:
+  - >
+    That the isolate is susceptible or sensitive to any drug, including one with
+    no determinant found and one with no evidence base at all.
+  - >
+    A species name for an isolate the ANI and marker evidence resolved only to a
+    complex - in particular M. chimaera or M. intracellulare where the evidence
+    supports the M. avium complex only.
+  - >
+    That an absent Kraken2 or read-classifier signal means the culture is pure.
+  - >
+    A treatment recommendation, a regimen, or a dose.
+
+gates:
+  - id: unevidenced_pair_stance
+    question: >
+      A drug in this playbook has no implemented evidence base for this species.
+      How should the report present it?
+    options:
+      - state_no_evidence_base
+      - omit_the_drug
+      - report_targets_examined_only
+    default: state_no_evidence_base
+    describe: >
+      Defaults to stating it. Omitting the drug would leave a reader to assume
+      it was not a concern, which is the silent failure this whole tool exists
+      to avoid.
