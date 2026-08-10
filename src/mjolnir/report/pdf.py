@@ -60,7 +60,6 @@ from ..records import (
     CALL_S_INTERIM,
     CALL_UNCERTAIN,
     CohortResult,
-    RESISTANCE_CALLS,
     SampleResult,
     STATUS_FAIL,
     STATUS_PASS,
@@ -126,6 +125,11 @@ NOT_MEASURED_STYLE = {"fill": "#eceef1", "ink": MUTED, "border": HATCH_INK}
 DISTANCE_RAMP: Tuple[str, ...] = ("#1b3a63", "#27528a", "#3a6fae", "#6f9bcb",
                                   "#a8c3de", "#d5e1ee")
 FAR_RAMP: Tuple[str, ...] = ("#d9dce1", "#e6e8ec", "#f1f2f5")
+
+#: Legend order: most alarming first. The vocabulary's own order is declaration
+#: order, which reads as arbitrary in a swatch block.
+LEGEND_ORDER: Tuple[str, ...] = (CALL_R, CALL_R_OUTSIDE_WHO, CALL_R_INTERIM,
+                                 CALL_UNCERTAIN, CALL_S, CALL_S_INTERIM, CALL_NO_CALL)
 
 #: The longest annex table Mjolnir will typeset. Beyond this the PDF says how
 #: many rows it dropped and where the complete table is; it never truncates
@@ -268,7 +272,7 @@ def _cell(scene: Scene, x: float, y: float, w: float, h: float, call: str,
 
 
 def _legend(scene: Scene, x: float, y: float, width: float,
-            calls: Sequence[str] = RESISTANCE_CALLS, columns: int = 2) -> float:
+            calls: Sequence[str] = LEGEND_ORDER, columns: int = 2) -> float:
     """Swatch legend. Returns the y below it."""
     entry_h = 12.0
     col_w = width / float(columns)
@@ -302,7 +306,7 @@ def drug_grid_scene(grid: T.Grid, cell_w: float = 44.0, cell_h: float = 14.0,
     n_rows = len(grid.row_labels)
     width = label_w + cell_w * len(grid.column_labels) + flag_w
     body_h = header_h + n_rows * cell_h
-    legend_h = 12.0 * int(math.ceil(len(RESISTANCE_CALLS) / 2.0)) + 10.0
+    legend_h = 12.0 * int(math.ceil(len(LEGEND_ORDER) / 2.0)) + 10.0
     scene = Scene(width=width, height=body_h + legend_h + 6.0,
                   title="Drug by catalogue", caption=grid.caption)
 
@@ -367,16 +371,17 @@ def coverage_strip_scene(result: SampleResult, width: float = CONTENT_WIDTH) -> 
 
     label_w, value_w = 148.0, 96.0
     track_w = width - label_w - value_w
-    row_h, track_h = 15.0, 9.0
+    row_h, track_h = 19.0, 9.0
     header_h = 12.0
 
-    depth_max = max([MIN_DEPTH * 1.6] + [
-        float(by_label[s.label].value) * 1.25
-        for s in depth_specs
-        if s.label in by_label and isinstance(by_label[s.label].value, (int, float))
-        and by_label[s.label].value is not None])
+    observed = [float(by_label[spec.label].value) * 1.25 for spec in depth_specs
+                if by_label.get(spec.label) is not None
+                and isinstance(by_label[spec.label].value, (int, float))]
+    # Round the axis up to a multiple of ten so the tick labels are readable
+    # numbers; the bars and the thresholds are drawn from the real values.
+    depth_max = math.ceil(max([MIN_DEPTH * 1.6] + observed) / 10.0) * 10.0
 
-    height = (header_h + len(depth_specs) * row_h + 10.0
+    height = (header_h + len(depth_specs) * row_h + 12.0
               + header_h + len(frac_specs) * row_h + 8.0)
     scene = Scene(width=width, height=height, title="Coverage and depth",
                   caption="Bars are the measured value; the caret under each track is the "
@@ -387,7 +392,7 @@ def coverage_strip_scene(result: SampleResult, width: float = CONTENT_WIDTH) -> 
     y = _metric_block(scene, "read depth (x)", depth_specs, by_label, y, label_w,
                       track_w, value_w, row_h, track_h, header_h,
                       scale_max=depth_max, is_fraction=False)
-    y += 10.0
+    y += 12.0
     _metric_block(scene, "coverage and composition (%)", frac_specs, by_label, y,
                   label_w, track_w, value_w, row_h, track_h, header_h,
                   scale_max=1.0, is_fraction=True)
@@ -462,9 +467,13 @@ def allele_fraction_scene(result: SampleResult, width: float = CONTENT_WIDTH,
     points = T.catalogue_variant_points(result)
     if not points:
         return _empty_scene("No variants were called for this sample.")
-    left, right, top = 34.0, 12.0, 12.0
-    lane_h = 20.0
-    plot_h = height - top - 34.0 - lane_h
+    missing = [p for p in points if p["allele_fraction"] is None]
+    left, right, top = 34.0, 12.0, 14.0
+    # The lane for variants with no allele fraction only takes space when there
+    # are any; on Illumina it usually collapses to nothing.
+    lane_h = 24.0 if missing else 0.0
+    axis_h = 26.0
+    plot_h = height - top - axis_h - lane_h
     plot_w = width - left - right
 
     positions = [p["pos"] for p in points]
@@ -504,8 +513,17 @@ def allele_fraction_scene(result: SampleResult, width: float = CONTENT_WIDTH,
                    "minor-variant reporting floor {0:.2f}".format(MIN_MINOR_VARIANT_FRACTION),
                    size=5.6, fill=MUTED, anchor="end"))
 
-    lane_y = top + plot_h + 16.0
-    missing = [p for p in points if p["allele_fraction"] is None]
+    # Position axis. Without ticks the horizontal placement of a point carries
+    # no information at all, which is worse than not drawing it.
+    axis_y = top + plot_h
+    scene.add(Line(left, axis_y, left + plot_w, axis_y, stroke=LINE, width=0.5))
+    for step in range(0, 5):
+        position = span_min + (span_max - span_min) * step / 4.0
+        tx = px(position)
+        scene.add(Line(tx, axis_y, tx, axis_y + 2.5, stroke=LINE, width=0.5))
+        scene.add(Text(tx, axis_y + 9.0, _position_label(position), size=5.6,
+                       fill=MUTED, anchor="middle"))
+    lane_y = axis_y + axis_h - 6.0
     labelled = 0
     for point in points:
         depth = point["depth"] or 0
@@ -526,22 +544,35 @@ def allele_fraction_scene(result: SampleResult, width: float = CONTENT_WIDTH,
                          stroke=style["border"] if graded else "#b6bcc6",
                          stroke_width=0.5, title=title))
         if graded and labelled < 6 and point["gene"]:
+            # Stagger alternate labels so two variants a few kilobases apart do
+            # not overprint each other.
+            offset = -(radius + 2.0) if labelled % 2 == 0 else (radius + 6.0)
             labelled += 1
             scene.add(Text(px(point["pos"]) + radius + 1.5,
-                           py(point["allele_fraction"]) - radius - 1.0,
+                           py(point["allele_fraction"]) + offset,
                            _ellipsis(point["label"], 22), size=5.4, fill=INK))
 
     if missing:
-        scene.add(Line(left, lane_y, left + plot_w, lane_y, stroke=LINE, width=0.4))
-        scene.add(Text(left, lane_y + 15.0,
-                       "{0} variant(s) with no allele fraction: {1}".format(
+        scene.add(Text(left, lane_y + 17.0,
+                       "{0} variant(s) with no allele fraction, marked as ticks: "
+                       "{1}".format(
                            len(missing),
-                           "assembly input carries none" if result.platform == "fasta"
+                           "assembly input carries none, which is a capability loss "
+                           "and not a clean result" if result.platform == "fasta"
                            else "the caller reported none"),
                        size=5.8, fill=MUTED))
-    scene.add(Text(left + plot_w / 2.0, height - 2.0, axis_note, size=5.8,
-                   fill=MUTED, anchor="middle"))
+    scene.add(Text(left + plot_w, top - 4.0, axis_note, size=5.8,
+                   fill=MUTED, anchor="end"))
     return scene
+
+
+def _position_label(position: float) -> str:
+    """A genome coordinate at a readable magnitude."""
+    if position >= 1e6:
+        return "{0:.1f} Mb".format(position / 1e6)
+    if position >= 1e3:
+        return "{0:.0f} kb".format(position / 1e3)
+    return "{0:.0f}".format(position)
 
 
 def distance_matrix_scene(cohort: CohortResult, width: float = CONTENT_WIDTH) -> Scene:
@@ -553,7 +584,9 @@ def distance_matrix_scene(cohort: CohortResult, width: float = CONTENT_WIDTH) ->
     cell = min(26.0, (width - label_w) / float(len(samples)))
     header_h = 62.0
     size = cell * len(samples)
-    scene = Scene(width=label_w + size + 60.0, height=header_h + size + 46.0,
+    legend_w = 470.0
+    scene = Scene(width=max(label_w + size + 60.0, legend_w),
+                  height=header_h + size + 46.0,
                   title="Pairwise masked SNP distance",
                   caption="Hatched cells were never compared; they are absent distances, "
                           "not zeros. The shared callable denominator for every pair is in "
@@ -591,21 +624,28 @@ def distance_matrix_scene(cohort: CohortResult, width: float = CONTENT_WIDTH) ->
                 scene.add(Text(x + cell / 2.0, y + cell / 2.0 + 2.2, str(value),
                                size=5.8, fill=ink, anchor="middle"))
 
-    legend_y = header_h + size + 10.0
-    scene.add(Text(0.0, legend_y + 7.0, "<= threshold ({0} SNPs)".format(threshold),
-                   size=6.0, fill=MUTED))
-    for index, colour in enumerate(DISTANCE_RAMP):
-        scene.add(Rect(120.0 + index * 14.0, legend_y, 13.0, 8.0, fill=colour,
-                       stroke=LINE, stroke_width=0.3))
-    scene.add(Text(120.0 + len(DISTANCE_RAMP) * 14.0 + 6.0, legend_y + 7.0,
-                   "above threshold", size=6.0, fill=MUTED))
-    for index, colour in enumerate(FAR_RAMP):
-        scene.add(Rect(210.0 + index * 14.0, legend_y, 13.0, 8.0, fill=colour,
-                       stroke=LINE, stroke_width=0.3))
-    scene.add(Rect(268.0, legend_y, 13.0, 8.0, fill="#f6f7f9", stroke=LINE,
+    legend_y = header_h + size + 12.0
+    cursor = 0.0
+    scene.add(Text(cursor, legend_y + 7.0,
+                   "<= threshold ({0} SNPs)".format(threshold), size=6.0, fill=MUTED))
+    cursor += 104.0
+    for colour in DISTANCE_RAMP:
+        scene.add(Rect(cursor, legend_y, 13.0, 8.0, fill=colour, stroke=LINE,
+                       stroke_width=0.3))
+        cursor += 14.0
+    cursor += 8.0
+    scene.add(Text(cursor, legend_y + 7.0, "above threshold", size=6.0, fill=MUTED))
+    cursor += 76.0
+    for colour in FAR_RAMP:
+        scene.add(Rect(cursor, legend_y, 13.0, 8.0, fill=colour, stroke=LINE,
+                       stroke_width=0.3))
+        cursor += 14.0
+    cursor += 8.0
+    scene.add(Rect(cursor, legend_y, 13.0, 8.0, fill="#f6f7f9", stroke=LINE,
                    stroke_width=0.3))
-    _hatch(scene, 268.0, legend_y, 13.0, 8.0, colour=HATCH_INK, step=3.0)
-    scene.add(Text(286.0, legend_y + 7.0, "never compared", size=6.0, fill=MUTED))
+    _hatch(scene, cursor, legend_y, 13.0, 8.0, colour=HATCH_INK, step=3.0)
+    cursor += 18.0
+    scene.add(Text(cursor, legend_y + 7.0, "never compared", size=6.0, fill=MUTED))
     return scene
 
 

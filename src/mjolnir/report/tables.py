@@ -1011,15 +1011,28 @@ def catalogue_variant_points(result: SampleResult) -> List[Dict[str, Any]]:
     On assembly input every one of them is None, and a plot that quietly dropped
     them would look like a sample with no variants at all.
     """
+    # A variant is coloured by the call it actually produced, not by the raw
+    # catalogue grade behind it. The distinction matters for exactly the case the
+    # design refuses to blur: a variant WHO does not grade that tbdb calls R
+    # yields R-outside-WHO, and the plot must not draw it the same red as a WHO
+    # Group 1 determinant.
+    consensus: Dict[str, str] = {}
+    for drug_call in result.drugs:
+        for key in drug_call.supporting_variants:
+            previous = consensus.get(key)
+            consensus[key] = (worst_call([previous, drug_call.call]) if previous
+                              else drug_call.call)
     points: List[Dict[str, Any]] = []
     for variant in result.variants:
-        call = worst_call([c.call for c in variant.catalogue_calls]) \
+        catalogue_call = worst_call([c.call for c in variant.catalogue_calls]) \
             if variant.catalogue_calls else CALL_NO_CALL
+        call = consensus.get(variant.hgvs_key) or catalogue_call
         points.append({
             "pos": variant.pos,
             "allele_fraction": variant.allele_fraction,
             "depth": variant.depth,
             "call": call,
+            "catalogue_call": catalogue_call,
             "catalogued": bool(variant.catalogue_calls),
             "label": variant.display,
             "gene": variant.gene,

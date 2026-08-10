@@ -258,7 +258,21 @@ permit redistribution is fetched at install time rather than vendored.
 
 ## Status
 
-Version 0.1.0. The code is complete and unit-tested; validation against the
-159-sample *M. chimaera* multi-site collection and against MTB reference data is
-in progress and its results will be published here, generated from a measured
-file rather than typed by hand.
+Version 0.1.0. The code is complete and unit-tested. Validation against the
+159-isolate *M. chimaera* multi-site collection is planned in
+[docs/VALIDATION.md](docs/VALIDATION.md), which states for each run what it can
+and cannot establish.
+
+<!-- METRICS:BEGIN -->
+
+## Validation
+
+No measurements yet. This block is generated from `analysis/metrics.json` by
+`tools/sync_readme.py`, and the test suite re-runs it with `--check`, so a
+figure typed in by hand fails the build rather than reaching a clinician.
+
+Until those runs happen, nothing here claims accuracy — including the
+tuberculosis resistance path, which has no phenotypic DST data on hand to be
+measured against.
+
+<!-- METRICS:END -->
