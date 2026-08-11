@@ -968,6 +968,14 @@ ANI_SPECIES_FLOOR = _define(
 #: mycobacterial reference set can speak for, and calling variants against a
 #: genome that distant would put every coordinate in the wrong organism without
 #: saying so.
+#: SOURCE: WHO catalogue v2 practice. Its graded promoter variants run to
+#: c.-669 (mshA) and the catalogue's own upstream rows sit inside this window,
+#: so a narrower one would drop Group 1 determinants - eis c.-14C>T and
+#: inhA c.-154G>A among them - and report them as intergenic.
+PROMOTER_UPSTREAM_BP = _define(
+    "promoter_upstream_bp", 1000, SRC_WHO_V2, unit="bp",
+    note="how far before a start codon a variant is still named for that gene")
+
 ANI_GENUS_FLOOR = _define(
     "ani_genus_floor", 80.0, "Mjolnir policy (design section 6)",
     unit="percent ANI",

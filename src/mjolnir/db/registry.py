@@ -587,6 +587,15 @@ TBDB = _register(Database(
             note="TB-Profiler's variant library, with its own confidence field",
         ),
         DatabaseFile(
+            name="genome.gff", url=TBDB_RAW + "genome.gff",
+            size_bytes=2346945,
+            note=("H37Rv gene models. Without them a variant is a coordinate and "
+                  "nothing else: WHO is matched on coordinates and still works, "
+                  "but MTBseq and tbdb are keyed on <gene>_<hgvs> and match "
+                  "nothing at all, so the consensus quietly becomes WHO alone "
+                  "and the NTM rrl/rrs/erm(41) rules cannot fire."),
+        ),
+        DatabaseFile(
             name="genome.fasta", url=TBDB_RAW + "genome.fasta",
             size_bytes=4485135, git_blob_sha1="17f502d3a1a23b1f0ba339a364aa02bacd1fe10c",
             required=False,

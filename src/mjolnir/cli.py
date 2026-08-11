@@ -157,6 +157,9 @@ def _add_analysis(parser: argparse.ArgumentParser) -> None:
                        help="allow the bcftools fallback on ONT when Clair3 is "
                             "absent. It disables indel calling entirely and the "
                             "report says the numbers came from it")
+    group.add_argument("--gff", metavar="GFF3",
+                       help="gene models used to name variants (default: beside "
+                            "the reference, or tbdb's H37Rv models for MTBC)")
     group.add_argument("--build-index", action="store_true",
                        help="build a missing reference index instead of refusing")
     group.add_argument("--no-markdup", dest="mark_duplicates", action="store_false",
@@ -281,6 +284,7 @@ def build_options(args: Any, *, callable_regions: bool = False) -> RunOptions:
         caller=getattr(args, "caller", None) or "",
         clair3_model=getattr(args, "clair3_model", None) or "",
         build_index=bool(getattr(args, "build_index", False)),
+        gff=getattr(args, "gff", "") or "",
         mark_duplicates=getattr(args, "mark_duplicates", None),
         allow_degraded_ont_calling=bool(
             getattr(args, "allow_degraded_ont_calling", False)),

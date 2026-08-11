@@ -62,11 +62,13 @@ from .db import fetch as db_fetch
 from .db import registry as db_registry
 from .engines.call import call_variants
 from .engines.depth import measure_coverage, samtools_depth_argv
+from .engines import annotate as annotate_module
 from .engines.map import ensure_reference_index, iter_output, map_reads
 from .engines.pileup import PileupSite, allele_fraction_at, pileup_at
 from .records import (PLATFORM_FASTA, PLATFORM_ILLUMINA, PLATFORM_ONT,
                       STATUS_FAIL, STATUS_WARN, Check, CohortResult,
                       DatabaseVersion, Interpretation, LineageCall, QCMetrics,
+                      STATUS_PASS,
                       SampleInput, SampleResult, SpeciesCall, Variant,
                       VARIANT_SNP, normalise_platform)
 from .resistance import consensus as consensus_engine
@@ -153,6 +155,9 @@ class RunOptions:
     mapper: str = ""
     caller: str = ""
     clair3_model: str = ""
+    #: GFF3 whose gene models name this run's variants. Empty means
+    #: "find one": beside the reference, or tbdb's H37Rv models for MTBC.
+    gff: str = ""
     #: Build a missing reference index instead of refusing. Off by default: the
     #: database directory may be shared and read-only, and a silent multi-minute
     #: index build in the middle of a batch looks exactly like a hang.
@@ -615,6 +620,60 @@ class Pipeline(object):
                 ANI_FETCH_HINT)
         )
 
+    def annotation_source(self, reference: Path, mtbc: bool) -> Optional[Path]:
+        """The GFF whose gene models name this reference's variants.
+
+        An explicit ``--gff`` wins. Otherwise a file beside the reference is
+        used if there is one, and for an MTBC run tbdb's H37Rv models are the
+        fallback — they are the annotation the MTBC catalogues were written
+        against, so using anything else would name variants in a vocabulary the
+        catalogues do not share.
+        """
+        if self.options.gff:
+            return Path(self.options.gff)
+        for candidate in (reference.with_suffix(".gff"),
+                          reference.with_suffix(".gff3"),
+                          Path(str(reference) + ".gff")):
+            if candidate.exists():
+                return candidate
+        if mtbc:
+            try:
+                return db_fetch.database_file("tbdb", "genome.gff",
+                                              db_root=self.config.db_dir)
+            except MjolnirError:
+                return None
+        return None
+
+    def _annotate(self, result: SampleResult, variants: Sequence[Variant],
+                  reference: Path, mtbc: bool) -> None:
+        """Attach gene and HGVS names, or say what their absence costs.
+
+        Two of the three catalogues are keyed on ``<gene>_<hgvs>``. Without this
+        they match nothing, the consensus silently becomes WHO alone, and the NTM
+        rules never fire — so a failure here is recorded as a lost capability
+        rather than passed over.
+        """
+        gff = self.annotation_source(reference, mtbc)
+        if gff is None:
+            return
+        annotation = self._stage(
+            result, "variant_gene_annotation", "resistance",
+            "variants carry no gene names, so MTBseq and tbdb cannot be "
+            "consulted and the NTM rrl/rrs/erm(41) rules cannot be applied",
+            annotate_module.Annotation.load, gff, reference)
+        if annotation is None:
+            return
+        named = annotate_module.annotate(variants, annotation)
+        self.databases_used.add("tbdb")
+        LOG.info("%s: named %d of %d variants from %s",
+                 result.sample_id, named, len(variants), Path(gff).name)
+        result.checks.append(Check(
+            name="variant_gene_annotation", value=named, threshold=None,
+            source="tbdb genome.gff gene models", status=STATUS_PASS,
+            measured=True, category="resistance",
+            reading="{0} of {1} called variants were named for a gene.".format(
+                named, len(variants))))
+
     def _nearest_reference(self, species: Optional[SpeciesCall]
                            ) -> Optional[Tuple[Path, str, float]]:
         """The installed genome the sample is closest to, by the ANI candidates.
@@ -827,6 +886,8 @@ class Pipeline(object):
         barcode_sites = self.barcode() if self.options.typing else []
         marker_snps = self.markers() if self.options.typing else []
         is_mtbc, assumption = self.mtbc_context(result.species, reference, contig_names)
+        if variants:
+            self._annotate(result, variants, reference, is_mtbc)
         if assumption:
             result.caveats.append(assumption)
             result.checks.append(Check.not_measured(
