@@ -116,6 +116,33 @@ successful run into a failure — and costing that sample its callable regions,
 and with them every distance it took part in. Found by review pass 3 and fixed;
 streaming tools now get 30 seconds to exit on their own.
 
+### NTM resistance, on a real *M. abscessus* isolate
+
+Until 2026-08-11 the `erm(41)` / `rrl` / `rrs` rules had never fired once: no NTM
+reference carried gene models, so every determinant was keyed on a gene name
+that did not exist. With a 27-species panel carrying gene models, `DRR245157`:
+
+| | |
+|---|---|
+| Species | **Mycobacteroides abscessus**, resolved to species |
+| Variants named | 24,300 of 24,487 |
+| `erm(41)` position 28 | **C**, read from a pileup at 39× |
+| `rrl` / `rrs` assessed | yes / yes |
+| **Clarithromycin** | **S**, moderate — *"a statement about inducible resistance only"* |
+| **Amikacin** | **no-call** — *"rrs examined and no determinant found"* |
+
+Both calls are the right shape. C28 `erm(41)` is non-functional, so there is no
+inducible macrolide resistance — but the caveat says the call is about inducible
+resistance and not about acquired `rrl` mutations, which is the distinction that
+decides whether a patient gets a macrolide. And amikacin is a **no-call**
+although `rrs` was examined and clean, because a clean `rrs` is absence of a
+known determinant and not evidence of susceptibility.
+
+The sequevar is read from a pileup rather than from the variant list on purpose:
+T28C is a polymorphism, so against a subsp. *abscessus* reference C28 is a
+variant and T28 is invisible, and against a subsp. *massiliense* reference the
+reverse. Only the base itself answers the question.
+
 ### The deliberate negative control
 
 No Kraken2 index was configured. The contamination screen reported
