@@ -143,6 +143,37 @@ T28C is a polymorphism, so against a subsp. *abscessus* reference C28 is a
 variant and T28 is invisible, and against a subsp. *massiliense* reference the
 reverse. Only the base itself answers the question.
 
+### The reference panel, and six taxids that were wrong
+
+Species identification is ANI against a reference set, and that set existed only
+as ten files assembled by hand. `mjolnir db panel` now fetches **27 mycobacterial
+species, each with its gene models**, and the gene models are the part that
+mattered: every NTM resistance rule is keyed on a gene name, so against an
+unannotated reference `erm(41)`, `rrl` and `rrs` are written, tested and dead.
+
+Each genome is checked against the organism NCBI reports for its accession
+before it enters the panel, and that check immediately caught **six wrong
+taxids** in the first draft of the species table:
+
+| taxid | intended | what NCBI actually returns |
+|---|---|---|
+| 1698 | *M. chelonae* | ***Brevibacterium epidermidis*** |
+| 1096 | *M. leprae* | ***Chlorobium phaeobacteroides*** (a green sulfur bacterium) |
+| 1769 | *M. fortuitum* | *M. leprae* |
+| 1770 | *M. haemophilum* | *M. avium* subsp. *paratuberculosis* |
+| 1794 | *M. gordonae* | another organism |
+| 1305 | *M. phlei* | another organism |
+
+**A wrong taxid does not fail.** It returns a real, well-formed genome for a
+different organism, which then sits in the panel under the name that was asked
+for — and every isolate matching it is given that name. The `M. haemophilum`
+entry had already shipped, and was caught only because a real *M. avium* isolate
+matched it at 98.53% next to *M. avium* at 98.57%: those two species are nowhere
+near that close, and the number was biologically impossible.
+
+The taxids are corrected, but the durable fix is that they are no longer
+trusted. The manifest carries the name NCBI reports, not the one that was typed.
+
 ### The deliberate negative control
 
 No Kraken2 index was configured. The contamination screen reported
