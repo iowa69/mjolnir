@@ -194,3 +194,52 @@ def test_the_joint_table_carries_the_reference_the_mask_is_chosen_by():
     table = build_joint_table(entries, reference="/db/ani/chimaera.fna")
     assert table.reference == "/db/ani/chimaera.fna"
     assert M.default_mask_path(table.reference).name == "chimaera.fna.mask.bed"
+
+
+# ---------------------------------------------------------------------------
+# The reference panel
+# ---------------------------------------------------------------------------
+
+def test_the_panel_covers_the_organisms_the_tool_reports_on():
+    """A species absent from the panel cannot be excluded by ANI.
+
+    It is matched to the closest thing that happens to be present and named
+    that, so the contaminants and the near neighbours are in the panel to be
+    named rather than absorbed.
+    """
+    from mjolnir.db import refpanel
+
+    names = {entry.name for entry in refpanel.PANEL}
+    for required in ("Mycobacterium tuberculosis",
+                     "Mycobacterium intracellulare subsp. chimaera",
+                     "Mycobacterium intracellulare",
+                     "Mycobacterium avium",
+                     "Mycobacteroides abscessus",
+                     "Mycobacterium gordonae"):
+        assert required in names, required
+
+
+def test_the_manifest_says_which_references_can_carry_a_resistance_call(tmp_path):
+    """A reference with no gene models can name a species and nothing else.
+
+    Every resistance rule is keyed on a gene name, so the distinction decides
+    what a run against that genome is capable of, and a reader comparing two
+    runs has to be able to see which they had.
+    """
+    from mjolnir.db import refpanel
+
+    target = tmp_path / "references.tsv"
+    refpanel.write_manifest(target, [
+        ("A.fna", "Mycobacterium alpha", "MAC", "GCF_1", True),
+        ("B.fna", "Mycobacterium beta", "", "GCF_2", False),
+    ])
+    text = target.read_text()
+    assert "gene models present" in text
+    assert "no resistance rule can fire" in text
+
+
+def test_panel_status_reports_nothing_when_nothing_is_installed(tmp_path):
+    """An absent panel is an absence, not an empty success."""
+    from mjolnir.db import refpanel
+
+    assert refpanel.panel_status(tmp_path) == {"references": 0, "with_gene_models": 0}

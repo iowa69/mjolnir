@@ -93,6 +93,7 @@ test:
     - mjolnir.contamination.purity
     - mjolnir.db
     - mjolnir.db.fetch
+    - mjolnir.db.refpanel
     - mjolnir.db.registry
     - mjolnir.engines
     - mjolnir.engines.annotate

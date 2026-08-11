@@ -460,6 +460,27 @@ def cmd_db(args: Any) -> int:
             print()
         return 0
 
+    if action == "panel":
+        from .db import refpanel
+
+        status = refpanel.panel_status(db_root)
+        LOG.info("reference panel: %d installed, %d with gene models; "
+                 "fetching %d species",
+                 status["references"], status["with_gene_models"], len(refpanel.PANEL))
+        tally = refpanel.build_panel(db_root, overwrite=bool(
+            getattr(args, "force", False)))
+        print("reference panel at {0}".format(refpanel.panel_dir(db_root)))
+        print("  fetched            {0}".format(tally["fetched"]))
+        print("  already present    {0}".format(tally["reused"]))
+        print("  with gene models   {0}".format(tally["with_gene_models"]))
+        if tally["skipped"]:
+            print("  unavailable        {0} (named in the log above)".format(
+                tally["skipped"]))
+        if tally["with_gene_models"] < tally["fetched"] + tally["reused"]:
+            print("  note: a reference with no gene models can carry a species "
+                  "call and cannot carry a resistance call.")
+        return 0
+
     if action == "fetch":
         names = db_registry.resolve_names(args.names) if args.names else None
         if args.dry_run:
@@ -624,6 +645,8 @@ def build_parser() -> argparse.ArgumentParser:
         ("fetch", "download and verify databases"),
         ("info", "describe one or more databases in full"),
         ("verify", "re-check installed files against their recorded checksums"),
+        ("panel", "fetch the mycobacterial reference panel that species "
+                  "identification and NTM annotation need"),
     ):
         sub = db_sub.add_parser(action, help=help_text)
         sub.add_argument("names", nargs="*", metavar="NAME",
@@ -637,6 +660,9 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--strict", action="store_true",
                              help="treat a checksum mismatch as fatal rather than "
                                   "as a recorded warning")
+        if action == "panel":
+            sub.add_argument("--force", action="store_true",
+                             help="re-fetch genomes that are already present")
         if action == "verify":
             sub.add_argument("--deep", action="store_true",
                              help="re-checksum every file rather than checking "
