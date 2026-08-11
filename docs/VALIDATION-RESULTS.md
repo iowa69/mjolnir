@@ -15,7 +15,25 @@ had; those are in §5.
 
 ## 1. What was validated against known truth
 
-Three isolates whose identity is not in question, downloaded from ENA.
+Ten isolates across four platforms-worth of cases, downloaded from ENA plus the
+local *M. chimaera* collection.
+
+| Strain | Expected | Mjolnir | |
+|---|---|---|---|
+| `ERR3376643` *M. bovis* BCG | MTBC, animal lineage, PZA-R | MTBC, **La1.2**, Pyrazinamide R | ✓ |
+| `ERR11267966` *M. bovis* | MTBC, La1.x, PZA-R | MTBC, **La1.6**, PZA-R via `pncA_p.His57Asp` | ✓ |
+| `ERR10370893` H37Rv | MTBC, L4.9, susceptible | MTBC, **lineage4.9**, no determinant | ✓ |
+| `DRR245157` *M. abscessus* | species; erm(41) typed | **resolved to species**; `erm(41)` **C28** at 39× | ✓ |
+| `ERR12861366` *M. avium* | MAC, avium not chimaera | **98.575%** avium vs 87.67% chimaera | ✓ |
+| `ERR15500992` *M. kansasii* | species | **99.71%**, next hit 82.91% | ✓ |
+| `DRR261203` MTB **nanopore** | MTBC lineage | **lineage1.1.1.1**, 40/40 sites, INH-R | ✓ |
+| `CHIMAERA-OSR/30-20` etc. | MAC, outbreak structure | **99.402%** chimaera; masked distances | ✓ |
+
+Three of these could not have been run at all before 2026-08-11: the two NTM
+species had no gene models, so no resistance rule could fire, and no nanopore
+data had ever been through the tool.
+
+The detail behind the first three follows.
 
 | Sample | Expected | Mjolnir | |
 |---|---|---|---|
