@@ -49,6 +49,17 @@ from ..utils import (AA_1_TO_3, LOG, MjolnirError, PathLike, require_file,
 # Gene models
 # ---------------------------------------------------------------------------
 
+#: Product strings NCBI puts on rRNA features, and the gene names the catalogues
+#: and the NTM rules use for them. RefSeq gives 16S and 23S no ``gene=``
+#: attribute at all - the gene row is named for its locus tag and the product
+#: lives on the child feature - so without this an ``rrs`` 1408 amikacin variant
+#: in *M. abscessus* is named MAB_RS07510_... and matches nothing anywhere.
+RRNA_PRODUCT_NAMES = (
+    ("16s ribosomal rna", "rrs"),
+    ("23s ribosomal rna", "rrl"),
+    ("5s ribosomal rna", "rrf"),
+)
+
 #: Biotypes whose variants are named with ``n.`` rather than ``c.``/``p.``. An
 #: rRNA gene has no reading frame, so a codon number would be a fiction — and
 #: ``rrs`` and ``rrl`` are exactly where the aminoglycoside and macrolide
@@ -119,6 +130,28 @@ def _attributes(field_text: str) -> Dict[str, str]:
     return out
 
 
+def _rrna_products(path: PathLike) -> Dict[str, str]:
+    """``{parent gene id: rrs|rrl|rrf}`` from the rRNA feature rows."""
+    found: Dict[str, str] = {}
+    with smart_open(path, "rt") as handle:
+        for line in handle:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9 or fields[2].lower() not in ("rrna", "trna", "ncrna"):
+                continue
+            attrs = _attributes(fields[8])
+            product = attrs.get("product", "").lower()
+            parent = attrs.get("parent", "").split(":")[-1].replace("gene-", "")
+            if not parent:
+                continue
+            for needle, name in RRNA_PRODUCT_NAMES:
+                if needle in product:
+                    found[parent] = name
+                    break
+    return found
+
+
 def load_gff(path: PathLike, *, contig: str = "") -> List[Gene]:
     """Gene models from a GFF3.
 
@@ -127,6 +160,7 @@ def load_gff(path: PathLike, *, contig: str = "") -> List[Gene]:
     introns because these organisms do not have them.
     """
     resolved = require_file(path, "the GFF annotation")
+    rrna_names = _rrna_products(resolved)
     genes: List[Gene] = []
     with smart_open(resolved, "rt") as handle:
         for line in handle:
@@ -148,12 +182,24 @@ def load_gff(path: PathLike, *, contig: str = "") -> List[Gene]:
                 continue
             locus = attrs.get("gene_id") or attrs.get("locus_tag") or attrs.get("id", "")
             locus = locus.split(":")[-1]
+            # NCBI writes gene_biotype where Ensembl writes biotype. Reading only
+            # the latter made every NCBI rRNA gene look protein-coding, so an
+            # rrs or rrl variant was given a codon number and a p. name.
+            biotype = (attrs.get("biotype") or attrs.get("gene_biotype")
+                       or "protein_coding")
+            name = attrs.get("name", "")
+            # A gene named for its own locus tag is unnamed in practice.
+            if name == locus:
+                name = ""
+            rrna = rrna_names.get(locus) or rrna_names.get(attrs.get("id", "").split(":")[-1])
+            if rrna and not name:
+                name = rrna
             genes.append(Gene(
-                name=attrs.get("name", ""),
+                name=name,
                 locus_tag=locus,
                 start=start, end=end,
                 strand="-" if fields[6] == "-" else "+",
-                biotype=attrs.get("biotype", "protein_coding"),
+                biotype=biotype,
                 contig=contig or fields[0],
             ))
     if not genes:

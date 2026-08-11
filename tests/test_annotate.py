@@ -422,3 +422,40 @@ def test_a_nonsense_mnv_is_not_called_synonymous(genome):
         genome["annotation"], "chr1", position, "GAC", "TGA")
     assert effect == "stop_gained", (hgvs, effect)
     assert hgvs.endswith("Ter"), hgvs
+
+
+def test_ncbi_rrna_genes_are_named_and_non_coding(tmp_path):
+    """RefSeq gives 16S and 23S no gene name and writes gene_biotype, not biotype.
+
+    Both defaults were wrong for NCBI annotation, and together they made the NTM
+    resistance rules unreachable on real data: an ``rrs`` 1408 amikacin variant
+    in *M. abscessus* was named ``MAB_RS07510_p.…`` — a protein change, in a gene
+    called after its own locus tag — and matched nothing anywhere.
+    """
+    gff = tmp_path / "ncbi.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "NC_1\tRefSeq\tgene\t100\t1600\t.\t+\t.\tID=gene-X_RS01;Name=X_RS01;"
+        "gene_biotype=rRNA;locus_tag=X_RS01\n"
+        "NC_1\tcmsearch\trRNA\t100\t1600\t.\t+\t.\tID=rna-X_RS01;Parent=gene-X_RS01;"
+        "product=16S ribosomal RNA;locus_tag=X_RS01\n"
+        "NC_1\tRefSeq\tgene\t2000\t5000\t.\t+\t.\tID=gene-X_RS02;Name=X_RS02;"
+        "gene_biotype=rRNA;locus_tag=X_RS02\n"
+        "NC_1\tcmsearch\trRNA\t2000\t5000\t.\t+\t.\tID=rna-X_RS02;Parent=gene-X_RS02;"
+        "product=23S ribosomal RNA;locus_tag=X_RS02\n")
+    genes = {g.name: g for g in A.load_gff(gff)}
+    assert "rrs" in genes and "rrl" in genes, sorted(genes)
+    assert not genes["rrs"].coding, "an rRNA gene must not be given codon numbers"
+    assert not genes["rrl"].coding
+
+
+def test_a_gene_named_after_its_own_locus_tag_counts_as_unnamed(tmp_path):
+    """Name=X_RS01 carries no information the locus tag does not already carry."""
+    gff = tmp_path / "lt.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "NC_1\tRefSeq\tgene\t100\t400\t.\t+\t.\tID=gene-X_RS01;Name=X_RS01;"
+        "gene_biotype=protein_coding;locus_tag=X_RS01\n")
+    gene = A.load_gff(gff)[0]
+    assert gene.name == ""
+    assert gene.label == "X_RS01"
