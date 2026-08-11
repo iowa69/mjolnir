@@ -1554,7 +1554,14 @@ class Pipeline(object):
                 "the per-sample analysis to have produced a variant call and a "
                 "callable-region set; check the per-sample warnings above.")
 
-        table = build_joint_table(entries)
+        # The reference has to reach the joint table, because the mask is chosen
+        # by it: without this the table's reference was "" and every NTM cohort
+        # silently fell back to tbdb's H37Rv mask, which names contig
+        # "Chromosome", matches nothing, and is then rightly refused - so the
+        # computed mask sitting beside the reference was never even looked for.
+        references = {e.reference for e in entries if e.reference}
+        table = build_joint_table(
+            entries, reference=sorted(references)[0] if len(references) == 1 else "")
         checks: List[Check] = list(table.checks)
         if not any(check.name == "cohort_size" for check in checks):
             checks.append(cohort_size_check(len(entries)))
