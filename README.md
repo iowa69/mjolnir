@@ -69,7 +69,7 @@ answer from each, and assembling the rest by hand.
 | **Species** | ANI-based, with an explicit *cannot resolve below complex* outcome instead of a false-precision species name |
 | **Lineage** | MTBC lineage and sublineage from the tbdb SNP barcode — 1,111 SNPs, 126 taxa — including animal lineages La1/La2/La3 and BCG |
 | **Resistance** | Consensus across the WHO catalogue v2, MTBseq's ResSeq list and tbdb, with per-drug agreement shown, not hidden |
-| **NTM resistance** | `erm(41)` sequevar typing, `rrl` 2058/2059, `rrs` 1408 — with the citation behind every call |
+| **NTM resistance** | `erm(41)` sequevar typing, `rrl` 2058/2059, `rrs` 1408 — implemented, but see Status: no NTM reference ships gene models, so these rules do not yet fire on real NTM data |
 | **Contamination** | Heterozygosity at lineage-defining sites, not a taxonomic classifier read-out |
 | **Cohort** | Masked SNP distances with their shared-callable-sites denominator, and threshold clustering |
 | **Report** | A clinician-first PDF: drugs on page one, research annexes behind |
@@ -92,6 +92,13 @@ mjolnir db list           # every database, its licence and its citation
 mjolnir db fetch          # obtain them
 ```
 
+`db fetch` gets the catalogues, the H37Rv reference and the tbdb gene models.
+It does **not** get the ANI reference set that species identification needs —
+its composition is still an open question (design §14), so it is assembled by
+hand under `<db>/ani/` with a `references.tsv` naming each genome. Until it is
+there, `mjolnir doctor` reports species identification as unavailable and the
+tool declines to name a species rather than guessing one.
+
 The conda recipe is in `conda-recipe/` and `conda build conda-recipe` succeeds;
 once it is on bioconda this section becomes one line.
 
@@ -106,10 +113,10 @@ once rather than one subprocess at a time.
 mjolnir run -1 reads_R1.fastq.gz -2 reads_R2.fastq.gz -o out/
 
 # one isolate, nanopore
-mjolnir run --ont reads.fastq.gz -o out/
+mjolnir run --reads reads.fastq.gz --platform ont -o out/
 
 # an assembly
-mjolnir run --fasta assembly.fasta -o out/
+mjolnir run -a assembly.fasta -o out/
 
 # a cohort: joint variants, masked distances, clusters, cohort PDF
 mjolnir cohort reads/ -o out/ --distance 12
@@ -277,14 +284,27 @@ and runs from a clean environment.
 three whose identity is not in question — *M. bovis* BCG, *M. bovis* and H37Rv —
 including the `pncA_p.His57Asp` pyrazinamide call that is the *M. bovis*
 hallmark, and it separated *M. chimaera* from *M. intracellulare* at 99.40%
-against 97.32% ANI. Doing so found five defects that 607 unit tests had not,
-four of them now fixed, and one missing feature that is not:
+against 97.32% ANI. A four-isolate chimaera cohort produced masked SNP distances
+with their shared-callable denominators, and refused to score the one pair whose
+denominator was unknown rather than calling it zero.
 
-> **No module attaches gene names to called variants.** WHO matches on genomic
-> coordinates and works; MTBseq and tbdb match on `<gene>_<hgvs>` and therefore
-> match nothing. **The three-catalogue consensus is WHO-only in practice, and
-> the NTM `erm(41)`/`rrl`/`rrs` rules cannot fire at all.** The report shows
-> those catalogue columns as `--`, "not consulted", rather than as `ND`.
+Running it, and then three adversarial review passes over the code, found
+**47 confirmed defects** that the unit suite had not — because they lived in the
+plumbing between tested functions, or needed real data, or needed the tool to
+actually be run. All the serious ones are fixed and each carries a regression
+test. Two of them were earlier fixes of mine that looked right and were not,
+which is what the third pass was for.
+
+**What is still not true of this release:**
+
+> **No NTM reference ships gene models**, so NTM variants are unnamed and the
+> `erm(41)` / `rrl` / `rrs` rules cannot fire on real NTM data. The code is
+> there and tested; the annotation to drive it is not.
+>
+> **There is no phenotypic DST truth anywhere in the validation**, so nothing
+> here is an accuracy claim for resistance. **No ONT data has ever been run**, so
+> every nanopore threshold is untested. And **4 of the 159 chimaera isolates**
+> have been through the tool, not the collection.
 
 Read [docs/VALIDATION-RESULTS.md](docs/VALIDATION-RESULTS.md) before trusting a
 consensus call. What is still untested is listed there too: no phenotypic DST

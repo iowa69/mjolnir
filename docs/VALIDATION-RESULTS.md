@@ -103,15 +103,18 @@ mask that matches no contig, excluding nothing, and printing distances that look
 like masked distances — is exactly the silent wrongness §9 was written against.
 No `cohort.json`, no distance matrix and no clusters were written.
 
-It also means the outbreak-structure test in `VALIDATION.md` §2.2 **has not been
-run**, and cannot be until an NTM repeat mask exists. §9 says NTM references get
-their own mask computed at database build time; that is unimplemented. Until it
-is, cohort mode works only for MTBC.
+At the time, this meant the outbreak-structure test could not run at all: §9 said
+NTM references get their own mask computed at database build time and nothing
+implemented it. `cohort/mask.py` now does, and the run recorded above is the
+result.
 
-One further observation, recorded rather than explained: on sample `102-20`,
-`samtools depth` was killed with exit `-9` and coverage was reported as not
-measured. Memory was not exhausted when checked afterwards, so the cause is
-unknown and should be reproduced before anything is concluded from it.
+One further observation, recorded then as unexplained: on sample `102-20`,
+`samtools depth` was killed with exit `-9`. **The kill was ours.**
+`iter_output`'s cleanup ran on normal completion of the read loop and killed a
+process that had written all its output but not yet been reaped, turning a
+successful run into a failure — and costing that sample its callable regions,
+and with them every distance it took part in. Found by review pass 3 and fixed;
+streaming tools now get 30 seconds to exit on their own.
 
 ### The deliberate negative control
 
@@ -220,7 +223,6 @@ covering MTBC, MAC, *M. abscessus*, *M. kansasii*, *M. marinum* and
 
 ## 5. Still not done
 
-- **Variant gene annotation** (§2 above). Everything else is downstream of it.
 - **MAC marker SNPs**, so *chimaera* can be resolved below the complex.
 - **Phenotypic DST truth** for a resistance-accuracy claim. The drives on hand
   carry no MTB at all and the ENA samples have no DST attached.
