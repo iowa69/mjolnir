@@ -92,12 +92,28 @@ mjolnir db list           # every database, its licence and its citation
 mjolnir db fetch          # obtain them
 ```
 
-`db fetch` gets the catalogues, the H37Rv reference and the tbdb gene models.
-It does **not** get the ANI reference set that species identification needs —
-its composition is still an open question (design §14), so it is assembled by
-hand under `<db>/ani/` with a `references.tsv` naming each genome. Until it is
-there, `mjolnir doctor` reports species identification as unavailable and the
-tool declines to name a species rather than guessing one.
+```bash
+mjolnir db panel          # the mycobacterial reference panel: 27 species,
+                          # each with its gene models
+```
+
+The panel is what species identification compares against, and what NTM
+resistance depends on: `erm(41)`, `rrl` and `rrs` are all keyed on gene names,
+so against a reference with no annotation those rules cannot fire at all.
+
+It is deliberately wider than the organisms Mjolnir reports on. A species that
+is *not* in the panel cannot be excluded by ANI — it is matched to the closest
+genome that happens to be present and named that — so the laboratory
+contaminants and near neighbours are there to be named rather than absorbed.
+*M. gordonae*, the commonest contaminant of mycobacterial culture, is in it for
+exactly that reason.
+
+Each genome is checked against the organism NCBI reports for its accession
+before it enters the panel. That is not defensive programming for its own sake:
+six taxids in the first draft of the species table were wrong, and a wrong taxid
+does not fail — it returns a real genome for a different organism. One of them
+returned *Chlorobium phaeobacteroides*, a green sulfur bacterium, which would
+otherwise have sat in the panel labelled *Mycobacterium leprae*.
 
 The conda recipe is in `conda-recipe/` and `conda build conda-recipe` succeeds;
 once it is on bioconda this section becomes one line.
