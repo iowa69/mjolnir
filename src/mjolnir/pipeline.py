@@ -515,8 +515,14 @@ class Pipeline(object):
     # -- stage plumbing -----------------------------------------------------
 
     def _stage(self, result: SampleResult, name: str, category: str,
-               consequence: str, func: Any, *args: Any, **kwargs: Any) -> Any:
+               consequence: str, func: Any, /, *args: Any, **kwargs: Any) -> Any:
         """Run one optional stage; on failure record what was lost and continue.
+
+        Everything before the ``/`` is positional-only so that a keyword meant
+        for *func* can never bind to one of this method's own parameters. Cohort
+        mode died on exactly that: ``callable_regions`` takes a ``name``
+        argument, and passing it collided with this method's ``name`` and raised
+        TypeError before any sample was joined.
 
         The recorded :class:`~mjolnir.records.Check` is ``measured=False``, which
         every consumer renders as "not measured". That is the whole mechanism
