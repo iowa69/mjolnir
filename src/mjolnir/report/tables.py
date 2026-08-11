@@ -124,6 +124,7 @@ CALL_GLYPH: Dict[str, str] = {
     "S-interim": "s",
     "S": "S",
     CALL_NO_CALL: "ND",
+    "not-consulted": "--",
 }
 
 #: Legend text, spelled once, printed by both renderers. The first two entries
@@ -131,6 +132,11 @@ CALL_GLYPH: Dict[str, str] = {
 CALL_LEGEND: Tuple[Tuple[str, str], ...] = (
     (CALL_NO_CALL, "ND - no resistance determinant detected: nothing catalogued "
                    "was found. This is absence of evidence, not susceptibility."),
+    ("not-consulted",
+     "-- this catalogue could not be consulted for this sample and said nothing "
+     "either way. MTBseq and tbdb are matched on the <gene>_<hgvs> key, so "
+     "without gene-level annotation on the called variants they cannot match. "
+     "Do not read this as agreement with the call beside it."),
     ("S", "S - a variant was found and a catalogue graded it as not associated "
           "with resistance. A positive finding, unlike ND."),
     ("S-interim", "s - graded not associated with resistance, interim grade."),
@@ -755,9 +761,38 @@ def drug_flags(drug_call: Any) -> List[str]:
     return flags
 
 
+#: What a catalogue column says when the catalogue could not be consulted at
+#: all, as opposed to consulted and silent. SOURCE: Mjolnir policy, forced by a
+#: real run - MTBseq and tbdb are keyed on <gene>_<hgvs>, so with no gene-level
+#: annotation attached to the called variants neither can match anything, and
+#: printing "no determinant detected" for them says those catalogues looked and
+#: found nothing. They never looked.
+CATALOGUE_NOT_CONSULTED = "not-consulted"
+
+
+def consultable_catalogues(result: SampleResult) -> Dict[str, bool]:
+    """Which catalogues could be matched against at all for this sample.
+
+    WHO is matched on genomic coordinates and is consultable whenever variants
+    exist. MTBseq and tbdb are matched on the HGVS key, so they are consultable
+    only when the variants carry gene names. Absence of a call from a catalogue
+    that could not be consulted is not evidence about the drug.
+    """
+    have_variants = bool(result.variants)
+    have_hgvs = any(v.hgvs_key for v in result.variants)
+    out: Dict[str, bool] = {}
+    for catalogue in CATALOGUES:
+        if catalogue == CATALOGUE_WHO:
+            out[catalogue] = have_variants
+        else:
+            out[catalogue] = have_variants and have_hgvs
+    return out
+
+
 def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
     """One row per drug, with every catalogue's own answer beside the consensus."""
     rows: List[Dict[str, Any]] = []
+    consultable = consultable_catalogues(result)
     for call in sorted(result.drugs, key=lambda d: drug_order(d.drug)):
         row: Dict[str, Any] = {
             "sample": result.sample_id,
@@ -783,6 +818,8 @@ def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
         for catalogue in CATALOGUES:
             key = catalogue_key(catalogue)
             cat_call, grade, evidence = _catalogue_view(call, catalogue)
+            if cat_call == CALL_NO_CALL and not consultable.get(catalogue, True):
+                cat_call = CATALOGUE_NOT_CONSULTED
             row[key + "_call"] = cat_call
             row[key + "_grade"] = grade or None
             row[key + "_evidence"] = evidence or None
