@@ -302,3 +302,79 @@ def test_drug_names_are_normalised_before_they_are_joined():
     call = consensus.consensus_for_drug("RIF", [variant])
     assert call.drug == "Rifampicin"
     assert call.call == CALL_R
+
+
+# ---------------------------------------------------------------------------
+# Platform thresholds must be load-bearing here, not decorative
+# ---------------------------------------------------------------------------
+
+def _rpob_s450l(filters=()):
+    """rpoB Ser450Leu, WHO Group 1, carrying whatever FILTER labels are given."""
+    from mjolnir.records import CatalogueCall, Variant
+
+    return Variant(
+        chrom="NC_000962.3", pos=761155, ref="C", alt="T", gene="rpoB",
+        hgvs="p.Ser450Leu", depth=60, allele_fraction=0.033, is_major=False,
+        alt_reads=2, ref_reads=58, variant_type="snp", filters=list(filters),
+        catalogue_calls=[CatalogueCall(
+            catalogue="WHO v2", drug="Rifampicin", grade="1) Assoc w R",
+            call="R", variant_key="rpoB_p.Ser450Leu")])
+
+
+def test_a_variant_below_the_platform_thresholds_does_not_produce_a_resistance_call():
+    """apply_platform_filters labelled failing variants and nothing read the label.
+
+    Every per-platform threshold — Illumina >= 3 reads, ONT >= 5, major variant
+    >= 90% — was therefore decorative on this path: a determinant seen on 2 of 60
+    reads was printed as Rifampicin R at high confidence with no caveat, and
+    rifampicin would be withdrawn on evidence the pipeline itself had rejected.
+    The same label was already load-bearing for SNP distances in the cohort layer.
+    """
+    from mjolnir.resistance.consensus import consensus_for_drug
+
+    call = consensus_for_drug(
+        "Rifampicin", [_rpob_s450l(["min-reads<3", "below-minor-af<0.05"])],
+        platform="illumina")
+    assert call.call != "R", call.call
+
+
+def test_the_same_variant_that_passes_still_calls_resistance():
+    """The guard must not swallow a real determinant."""
+    from mjolnir.resistance.consensus import consensus_for_drug
+
+    call = consensus_for_drug("Rifampicin", [_rpob_s450l()], platform="illumina")
+    assert call.call == "R"
+
+
+def test_a_filtered_determinant_is_reported_rather_than_silently_dropped():
+    """Excluded, but never invisible.
+
+    A catalogued determinant that fails a threshold must not vanish into a clean
+    "no resistance determinant detected" — that is absence of evidence rendered
+    as evidence of absence, on a variant the tool did in fact see.
+    """
+    from mjolnir.resistance.consensus import consensus_for_drug
+
+    call = consensus_for_drug(
+        "Rifampicin", [_rpob_s450l(["min-reads<3"])], platform="illumina")
+    assert any("not counted" in c for c in call.caveats), call.caveats
+    assert any("min-reads<3" in c for c in call.caveats), call.caveats
+
+
+def test_a_caller_emitted_filter_is_honoured_too():
+    """Clair3 routinely emits LowQual records; they are not Mjolnir's own labels."""
+    from mjolnir.resistance.consensus import consensus_for_drug
+
+    call = consensus_for_drug(
+        "Rifampicin", [_rpob_s450l(["LowQual"])], platform="ont")
+    assert call.call != "R", call.call
+
+
+def test_pass_and_dot_are_not_treated_as_failures():
+    """VCF spells "no filters applied" three different ways."""
+    from mjolnir.resistance.consensus import consensus_for_drug
+
+    for label in ("PASS", ".", ""):
+        call = consensus_for_drug("Rifampicin", [_rpob_s450l([label])],
+                                  platform="illumina")
+        assert call.call == "R", (label, call.call)

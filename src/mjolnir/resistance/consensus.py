@@ -230,6 +230,47 @@ def collect_contributions(variants: Sequence[Variant], drug: str) -> List[Contri
     return found
 
 
+#: FILTER values that mean the caller and the platform thresholds were satisfied.
+#: Imported from the cohort layer so there is one definition: the same label was
+#: load-bearing for SNP distances and inert for resistance, which is precisely
+#: how a variant the tool had itself rejected produced a full-strength drug call.
+from ..cohort.joint import PASSING_FILTERS as _PASSING_FILTERS
+
+
+def variant_is_callable(variant: Variant) -> bool:
+    """Whether *variant* cleared the platform thresholds and the caller's own."""
+    for entry in (variant.filters or ()):
+        if str(entry).strip().upper() not in tuple(f.upper() for f in _PASSING_FILTERS):
+            return False
+    return True
+
+
+def _suppress_filtered(contributions: Sequence[Contribution]) -> List[str]:
+    """Remove contributions the thresholds rejected, and say what was removed.
+
+    ``apply_platform_filters`` labelled failing variants and nothing on this path
+    ever read the label, so every per-platform threshold - Illumina >= 3 reads,
+    ONT >= 5, major variant >= 90% - was decorative here: a determinant seen on
+    2 of 60 reads was printed as R at high confidence with no caveat.
+
+    Suppressed rather than dropped, because a catalogued determinant that fails a
+    threshold must not vanish into a clean "no determinant detected". The reader
+    has to see that it was found and why it was not counted.
+    """
+    caveats: List[str] = []
+    for contribution in contributions:
+        if contribution.suppressed_by or variant_is_callable(contribution.variant):
+            continue
+        reason = ", ".join(str(f) for f in contribution.variant.filters)
+        contribution.suppressed_by = "below platform thresholds ({0})".format(reason)
+        caveats.append(
+            "{0} was found but not counted: {1}. It is reported so that a "
+            "determinant below threshold is not mistaken for its absence.".format(
+                contribution.variant.display or contribution.call.variant_key
+                or "a catalogued variant", reason))
+    return caveats
+
+
 def _apply_suppressions(contributions: Sequence[Contribution], drug: str,
                         platform: str,
                         suppressions: Sequence["rules.Suppression"]) -> List[str]:
@@ -492,7 +533,8 @@ def consensus_for_drug(drug: str, variants: Sequence[Variant], *,
     plat = normalise_platform(platform)
     contributions = collect_contributions(variants, canonical)
 
-    caveats = _apply_suppressions(contributions, canonical, plat, suppressions)
+    caveats = _suppress_filtered(contributions)
+    caveats.extend(_apply_suppressions(contributions, canonical, plat, suppressions))
     suppressed = [c for c in contributions if not c.active]
 
     call, source = anchor_call(contributions)
@@ -655,6 +697,7 @@ def annex_rows(variants: Sequence[Variant], drug_call: DrugCall, *,
     to disagree with it.
     """
     contributions = collect_contributions(variants, drug_call.drug)
+    _suppress_filtered(contributions)
     _apply_suppressions(contributions, drug_call.drug,
                         normalise_platform(platform), suppressions)
     return side_by_side(contributions)
