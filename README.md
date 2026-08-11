@@ -270,16 +270,25 @@ permit redistribution is fetched at install time rather than vendored.
 
 ## Status
 
-Version 0.1.0. 42 modules, 607 unit tests, pyflakes clean, a wheel that installs
-and runs from a clean environment. What has *not* happened is the part that
-matters most:
+Version 0.1.0. 42 modules, 613 unit tests, pyflakes clean, a wheel that installs
+and runs from a clean environment.
 
-**No sample has been through this tool yet.** Every threshold is sourced, every
-refusal is tested, and the report renders — from synthetic records, in
-`examples/`. Validation against the 159-isolate *M. chimaera* multi-site
-collection is planned in [docs/VALIDATION.md](docs/VALIDATION.md), which states
-for each run what it can and cannot establish, and it has not been run. Until it
-has, nothing here is an accuracy claim.
+**It has now been run on real isolates**, and it got the answers right on the
+three whose identity is not in question — *M. bovis* BCG, *M. bovis* and H37Rv —
+including the `pncA_p.His57Asp` pyrazinamide call that is the *M. bovis*
+hallmark, and it separated *M. chimaera* from *M. intracellulare* at 99.40%
+against 97.32% ANI. Doing so found five defects that 607 unit tests had not,
+four of them now fixed, and one missing feature that is not:
+
+> **No module attaches gene names to called variants.** WHO matches on genomic
+> coordinates and works; MTBseq and tbdb match on `<gene>_<hgvs>` and therefore
+> match nothing. **The three-catalogue consensus is WHO-only in practice, and
+> the NTM `erm(41)`/`rrl`/`rrs` rules cannot fire at all.** The report shows
+> those catalogue columns as `--`, "not consulted", rather than as `ND`.
+
+Read [docs/VALIDATION-RESULTS.md](docs/VALIDATION-RESULTS.md) before trusting a
+consensus call. What is still untested is listed there too: no phenotypic DST
+truth, no ONT data, and only four of the 159 chimaera isolates.
 
 Run the examples to see the output shape without installing a single database:
 
