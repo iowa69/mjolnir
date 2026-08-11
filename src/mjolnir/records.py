@@ -202,9 +202,20 @@ def worst_status(statuses: Sequence[str]) -> str:
 
 
 def worst_call(calls: Sequence[str]) -> str:
-    """The call a drug takes when several variants contribute to it."""
-    chosen = CALL_NO_CALL
-    for call in calls:
+    """The call a drug takes when several variants contribute to it.
+
+    Seeded from the calls themselves rather than from ``no-call``. ``no-call``
+    sits above ``S`` and ``S-interim`` in the severity order, so seeding with it
+    added a phantom contribution that outranked every susceptible finding: a
+    drug whose only evidence was a graded not-associated variant came out as
+    "no determinant detected" - an absence - when a catalogue had in fact
+    spoken.
+    """
+    ranked = [call for call in calls if call]
+    if not ranked:
+        return CALL_NO_CALL
+    chosen = ranked[0]
+    for call in ranked[1:]:
         if CALL_SEVERITY.get(call, -1) > CALL_SEVERITY.get(chosen, -1):
             chosen = call
     return chosen

@@ -109,6 +109,12 @@ MAX_PILEUP_DEPTH = 8000
 #: calls. 100 Mbase is the value the GATK best-practice invocation uses.
 BWA_DETERMINISTIC_CHUNK = 100000000
 
+#: SOURCE: Mjolnir policy. How long a streaming tool is given to exit of its own
+#: accord once its output has been consumed. Long enough that a loaded machine
+#: does not have a successful run killed out from under it, short enough that a
+#: genuinely hung process does not stall the pipeline.
+STREAM_EXIT_GRACE_SECONDS = 30
+
 #: SOURCE: Mjolnir policy. Sort memory per thread; conservative because several
 #: samples may be in flight on one machine.
 SORT_MEMORY_PER_THREAD = "768M"
@@ -249,9 +255,18 @@ def iter_output(argv: Sequence[str], *, log_dir: Optional[PathLike] = None) -> I
             finally:
                 if proc.stdout is not None:
                     proc.stdout.close()
-                if proc.poll() is None:
+                # Give it a chance to exit before killing it. This block also
+                # runs on NORMAL completion of the read loop, and at that moment
+                # a process that has written all its output has usually not yet
+                # been reaped - so poll() returns None and an unconditional
+                # kill() turned a successful run into "exit -9, no stderr". That
+                # is not hypothetical: it cost a real cohort sample its callable
+                # regions, and with them every distance it took part in.
+                try:
+                    proc.wait(timeout=STREAM_EXIT_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
                     proc.kill()
-                proc.wait()
+                    proc.wait()
         if proc.returncode != 0:
             raise MjolnirError(
                 "{0} failed (exit {1}):\n{2}".format(

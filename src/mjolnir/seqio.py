@@ -62,6 +62,7 @@ from .utils import (
     natural_key,
     safe_fraction,
     to_jsonable,
+    safe_name,
 )
 
 # ---------------------------------------------------------------------------
@@ -1261,15 +1262,23 @@ def detect_inputs(paths: Sequence[PathLike],
                     len(detected), ", ".join(d.sample_id for d in detected)))
         detected[0].sample.sample_id = sample_id
 
-    seen: Dict[str, int] = {}
+    # Keyed on the name the OUTPUT FILES will carry, not on the raw id. Every
+    # artefact is written as safe_name(sample_id), so "sample 1" and "sample/1"
+    # are different ids and one set of files: the guard passed and the second
+    # sample silently overwrote the first's report.
+    seen: Dict[str, List[str]] = {}
     for entry in detected:
-        seen[entry.sample_id] = seen.get(entry.sample_id, 0) + 1
-    duplicates = sorted(name for name, count in seen.items() if count > 1)
-    if duplicates:
+        seen.setdefault(safe_name(entry.sample_id), []).append(entry.sample_id)
+    collisions = sorted((key, ids) for key, ids in seen.items() if len(ids) > 1)
+    if collisions:
+        detail = "; ".join(
+            "{0} -> {1}".format(", ".join(sorted(set(ids))), key)
+            for key, ids in collisions)
         raise MjolnirError(
-            "these sample names occur more than once in the inputs: {0}\n"
-            "  two different files resolving to one sample name would "
-            "overwrite each other's results.".format(", ".join(duplicates)))
+            "these inputs resolve to the same output name: {0}\n"
+            "  results are written as <sample>.json and friends, so two samples "
+            "sharing an output name would overwrite each other. Rename the "
+            "inputs or pass --sample.".format(detail))
 
     detected.sort(key=lambda d: natural_key(d.sample_id))
     return detected

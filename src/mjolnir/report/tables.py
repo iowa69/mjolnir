@@ -766,8 +766,18 @@ def drug_flags(drug_call: Any) -> List[str]:
     if drug_call.target_covered is False:
         flags.append("{0} target regions not callable".format(FLAG_NOT_EVALUABLE))
     if drug_call.caveats:
-        flags.append("{0} {1}".format(FLAG_CAVEAT,
-                                      plural(len(drug_call.caveats), "platform caveat")))
+        # The caveats themselves, not a count of them. Reduced to "1 platform
+        # caveat" they were unreadable: the sentence explaining that a
+        # catalogued determinant was found and not counted, or that an ONT indel
+        # call is uncorroborated, reached no renderer at all. A reader cannot
+        # act on a number of explanations.
+        for caveat in drug_call.caveats:
+            flags.append("{0} {1}".format(FLAG_CAVEAT, caveat))
+    if drug_call.target_covered is None:
+        # Distinct from False. "The targets were checked and are not callable"
+        # and "the targets were never checked" render identically otherwise, and
+        # on NTM samples the second is the common case.
+        flags.append("{0} target coverage not assessed".format(FLAG_NOT_EVALUABLE))
     return flags
 
 
