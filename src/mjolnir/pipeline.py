@@ -877,10 +877,6 @@ class Pipeline(object):
                     result.warnings.append(
                         "variants were called by the degraded ONT path ({0})".format(
                             called.caller))
-        if variants and not any(v.gene for v in variants):
-            result.caveats.append(NO_ANNOTATION_NOTE)
-            result.checks.append(Check.not_measured(
-                "variant_gene_annotation", NO_ANNOTATION_NOTE, category="resistance"))
 
         # -- one pileup for the barcode, the markers and the catalogue -------
         barcode_sites = self.barcode() if self.options.typing else []
@@ -888,6 +884,14 @@ class Pipeline(object):
         is_mtbc, assumption = self.mtbc_context(result.species, reference, contig_names)
         if variants:
             self._annotate(result, variants, reference, is_mtbc)
+            if not any(v.gene for v in variants):
+                # Checked after annotation has had its chance, not before it:
+                # asking whether variants carry gene names while they are still
+                # waiting to be named reports every run as unannotated.
+                result.caveats.append(NO_ANNOTATION_NOTE)
+                result.checks.append(Check.not_measured(
+                    "variant_gene_annotation", NO_ANNOTATION_NOTE,
+                    category="resistance"))
         if assumption:
             result.caveats.append(assumption)
             result.checks.append(Check.not_measured(

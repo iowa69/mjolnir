@@ -446,6 +446,50 @@ def _protein_indel(gene: Gene, sequence: str, position: int,
     return ""
 
 
+def _frameshift_name(gene: Gene, sequence: str, position: int,
+                     ref: str, alt: str) -> str:
+    """``p.<Aa><n>fs`` at the first residue the frameshift actually changes.
+
+    Not at the codon the inserted or deleted base happens to fall in. WHO names
+    ``dnaA_p.Glu486fs`` where the nucleotide sits in codon 505: a frameshift can
+    be introduced in a run of bases that leaves the next several residues intact,
+    and the name marks where the protein stops matching, which is what a reader
+    needs and what the catalogue is keyed on.
+    """
+    shift = len(alt) - len(ref)
+    if not sequence or not gene.coding or shift == 0:
+        return ""
+    reference = _protein(gene, sequence)
+    if not reference:
+        return ""
+    coding = sequence[gene.start - 1:gene.end]
+    offset = position - gene.start
+    if offset < 0 or offset + len(ref) > len(coding):
+        return ""
+    if coding[offset:offset + len(ref)].upper() != ref.upper():
+        return ""
+    mutated = coding[:offset] + alt + coding[offset + len(ref):]
+    if gene.strand == "-":
+        mutated = revcomp(mutated)
+    mutant = translate(mutated, start_is_met=False)
+    if not mutant:
+        return ""
+    # An in-frame indel is not a frameshift - unless what it inserts carries a
+    # stop codon, which truncates the product just as a frameshift does. WHO
+    # files that as fs too, and a 24-base insertion containing TAG in dnaA is
+    # exactly such a case.
+    truncated = len(mutant) < len(reference)
+    if shift % 3 == 0 and not truncated:
+        return ""
+    limit = min(len(reference), len(mutant))
+    index = 0
+    while index < limit and reference[index] == mutant[index]:
+        index += 1
+    if index >= len(reference):
+        return ""
+    return "p.{0}{1}fs".format(_aa3(reference[index]), index + 1)
+
+
 def _protein(gene: Gene, sequence: str) -> str:
     """The gene's translated product, cached on first use."""
     cached = _PROTEIN_CACHE.get((gene.locus_tag, gene.start, gene.end))
@@ -568,8 +612,15 @@ def names_for(annotation: Annotation, contig: str, position: int,
     for gene in annotation.promoters_at(position):
         if gene.label == primary_gene:
             continue
-        if len(ref) == 1 and len(alt) == 1:
-            hgvs, _effect = _hgvs_snv(gene, sequence, position, ref, alt)
+        if len(ref) == len(alt):
+            # Equal lengths are a substitution, not an indel. Routing an MNV
+            # through the indel namer produced "n.-41_-40ins" with nothing
+            # inserted - a name for an event that did not happen.
+            changed = _decompose(position, ref, alt)
+            if not changed:
+                continue
+            pos, ref_base, alt_base = changed[0]
+            hgvs, _effect = _hgvs_snv(gene, sequence, pos, ref_base, alt_base)
         else:
             hgvs, _effect = _hgvs_indel(gene, position, ref, alt)
         _add(gene.label, hgvs)
@@ -587,6 +638,11 @@ def names_for(annotation: Annotation, contig: str, position: int,
                 _add(gene.label, nucleotide)
                 _add(gene.label, _protein_indel(
                     gene, sequence, placed_pos, placed_ref, placed_alt))
+                frameshift = _frameshift_name(
+                    gene, sequence, placed_pos, placed_ref, placed_alt)
+                if frameshift:
+                    _add(gene.label, frameshift)
+                    _add(gene.label, "LoF")
 
     # Equal-length multi-base substitution: name every changed base, and every
     # codon those bases land in.
