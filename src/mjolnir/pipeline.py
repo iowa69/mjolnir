@@ -1457,7 +1457,11 @@ class Pipeline(object):
             sample_id=result.sample_id,
             variants=list(variants),
             callable_regions=regions,
-            reference=Path(reference).name,
+            # The full path, not the basename: the cohort's mask is looked for
+            # beside the reference, and a bare filename resolves against the
+            # working directory, where it is never found. That silently sent
+            # every NTM cohort to tbdb's H37Rv mask.
+            reference=str(reference),
             platform=platform,
             note=result.contamination.verdict)
 
@@ -1674,7 +1678,11 @@ class Pipeline(object):
             intervals, lengths = mask_module.build_mask(
                 reference, threads=self.config.threads)
             mask_module.write_mask(target, intervals,
-                                   reference=Path(reference).name, lengths=lengths)
+                                   # The full path, not the basename: the cohort's mask is looked for
+            # beside the reference, and a bare filename resolves against the
+            # working directory, where it is never found. That silently sent
+            # every NTM cohort to tbdb's H37Rv mask.
+            reference=str(reference), lengths=lengths)
         except MjolnirError as exc:
             LOG.warning("could not compute a repeat mask for %s: %s", reference, exc)
 

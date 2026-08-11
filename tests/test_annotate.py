@@ -247,6 +247,51 @@ def test_a_gff_with_no_genes_is_refused(tmp_path):
         A.load_gff(empty)
 
 
+def test_a_deletion_that_removes_the_start_codon_is_a_loss_not_an_upstream_variant(genome):
+    """The worst defect this project has had, pinned.
+
+    A deletion beginning upstream and running into the gene takes the start
+    codon with it. Classified by where it *starts*, it was named an
+    ``upstream_variant``, ``is_loss_of_function`` returned False, the WHO
+    loss-of-function rule never fired, and a complete *pncA* knockout — which is
+    definitive pyrazinamide resistance — was reported as a regulatory nucleotide
+    change with no determinant at all. Absence of a gene product rendered as
+    normality, in the gene that defines the drug.
+    """
+    # Two bases before the gene through to c.3: the whole start codon goes.
+    start = genome["a_start"]
+    deleted = genome["sequence"][start - 3:start + 2]
+    _gene, _locus, hgvs, effect = A.name_variant(
+        genome["annotation"], "chr1", start - 3, deleted, deleted[0])
+    assert effect == "start_lost", (hgvs, effect)
+    assert effect in A.LOF_EFFECTS
+    assert "geneA_LoF" in names(genome, start - 3, deleted, deleted[0])
+
+
+def test_a_deletion_entirely_before_the_gene_stays_an_upstream_variant(genome):
+    """The fix must not turn every promoter deletion into a knockout."""
+    start = genome["a_start"]
+    deleted = genome["sequence"][start - 10:start - 7]
+    _g, _l, _h, effect = A.name_variant(
+        genome["annotation"], "chr1", start - 10, deleted, deleted[0])
+    assert effect == "upstream_variant", effect
+
+
+def test_an_insertion_names_the_first_codon_the_shift_actually_reaches(genome):
+    """On the plus strand the inserted bases land *after* the anchor.
+
+    Naming the anchor's own codon is one too low whenever the anchor sits on a
+    codon boundary, which flipped the rpoB RRDR rule in both directions — on
+    rifampicin, the drug that rule exists for: it manufactured a Group 2
+    determinant from a frameshift starting outside the region, and dropped one
+    starting at its first codon.
+    """
+    # c.3 is a codon boundary: an insertion after it first alters codon 2.
+    produced = names(genome, genome["a_start"] + 2, "G", "GA")
+    assert any(n.endswith("p.Xaa2fs") for n in produced), produced
+    assert not any(n.endswith("p.Xaa1fs") for n in produced), produced
+
+
 # ---------------------------------------------------------------------------
 # The gold standard
 # ---------------------------------------------------------------------------

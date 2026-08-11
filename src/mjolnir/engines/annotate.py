@@ -340,12 +340,20 @@ def _hgvs_indel(gene: Gene, position: int, ref: str, alt: str) -> Tuple[str, str
         deleted = _oriented(gene, ref[1:1 + size])
         last = gene.coding_offset(first_changed + size - 1)
         low, high = min(coding_first, last), max(coding_first, last)
-        if low < 0 or not gene.coding:
-            prefix = "c." if gene.coding else "n."
-            span = "{0}".format(low) if size == 1 else "{0}_{1}".format(low, high)
-            return "{0}{1}del{2}".format(prefix, span, deleted), (
-                "upstream_variant" if low < 0 else "non_coding_variant")
         span = "{0}".format(low) if size == 1 else "{0}_{1}".format(low, high)
+
+        if not gene.coding:
+            return "n.{0}del{1}".format(span, deleted), "non_coding_variant"
+
+        # Classify by what the deletion actually removes, not by where it
+        # starts. A deletion that begins upstream and runs into the gene takes
+        # the start codon with it, and calling that an upstream variant is how a
+        # complete pncA knockout - definitive pyrazinamide resistance - was
+        # reported as a regulatory nucleotide change with no determinant at all.
+        if high < 1:
+            return "c.{0}del{1}".format(span, deleted), "upstream_variant"
+        if low < 1:
+            return "c.{0}del{1}".format(span, deleted), "start_lost"
         if shift % 3 != 0:
             codon_number = (low - 1) // 3 + 1
             return "p.Xaa{0}fs".format(codon_number), "frameshift_variant"
@@ -354,12 +362,19 @@ def _hgvs_indel(gene: Gene, position: int, ref: str, alt: str) -> Tuple[str, str
     inserted = _oriented(gene, alt[1:1 + size])
     anchor = gene.coding_offset(position)
     left, right = (anchor, anchor + 1) if gene.strand == "+" else (anchor - 1, anchor)
-    if anchor < 0 or not gene.coding:
-        prefix = "c." if gene.coding else "n."
-        return "{0}{1}_{2}ins{3}".format(prefix, left, right, inserted), (
-            "upstream_variant" if anchor < 0 else "non_coding_variant")
+    if not gene.coding:
+        return "n.{0}_{1}ins{2}".format(left, right, inserted), "non_coding_variant"
+    # The insertion lands after the anchor on the plus strand and before it on
+    # the minus strand, so only the minus strand's first changed base is the
+    # anchor itself. Using the anchor's own codon on the plus strand names a
+    # codon the shift provably does not touch whenever the anchor sits on a
+    # codon boundary - which flipped the rpoB RRDR rule in both directions, on
+    # the one drug that rule exists for.
+    first_coding = anchor + 1 if gene.strand == "+" else anchor
+    if first_coding < 1:
+        return "c.{0}_{1}ins{2}".format(left, right, inserted), "upstream_variant"
     if shift % 3 != 0:
-        codon_number = (max(anchor, 1) - 1) // 3 + 1
+        codon_number = (first_coding - 1) // 3 + 1
         return "p.Xaa{0}fs".format(codon_number), "frameshift_variant"
     return "c.{0}_{1}ins{2}".format(left, right, inserted), "inframe_insertion"
 
@@ -513,6 +528,7 @@ _PROTEIN_CACHE: Dict[Tuple[str, int, int], str] = {}
 #: catalogue row at all for the mutations that matter most in pncA and katG.
 LOF_EFFECTS = frozenset((
     "frameshift_variant", "stop_gained", "start_lost", "large_deletion",
+    "stop_lost",
 ))
 
 #: A deletion removing at least this much coding sequence is a candidate loss of
