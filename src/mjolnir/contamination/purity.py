@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..config import (
+    KRAKEN2_REPORTING_FLOOR,
     MAX_NON_TARGET_FRACTION as _MAX_NON_TARGET_FRACTION,
     ANI_MIN_ALIGNED_FRACTION,
     ANI_SPECIES_FLOOR,
@@ -304,25 +305,25 @@ class TaxonomicScreen:
                 category="contamination")
         # The screen having been *possible* is not the screen having been
         # *clean*. This branch used to pass unconditionally without reading a
-        # single row, so a genuinely contaminated sample on a good pangenome
-        # index reported a passing contamination check - which is the one thing
-        # this module exists to make impossible.
-        reportable = self.reportable_rows()
-        foreign = [row for row in reportable if not row.get("is_target")]
-        share = max((row.get("fraction") or 0.0) for row in foreign) if foreign else 0.0
+        # single row; the first attempt to fix that read keys the parser does
+        # not emit - is_target, fraction, name - so every lookup returned None,
+        # the largest foreign share was always 0.0, and a library that was 99%
+        # Staphylococcus aureus still passed. The keys below are the ones
+        # parse_kraken2_report actually writes.
         detail = "{0} against {1} at --confidence {2}".format(
             self.method or "taxonomic screen", self.index or "an index",
             self.confidence)
+        foreign = _foreign_taxa(self.reportable_rows())
+        share = max((frac for _label, frac in foreign), default=0.0)
         if not foreign:
             return Check.boolean(
                 "taxonomic_contamination_screen", True, expected=True,
                 source=source_for("kraken2_mtb_sensitivity_pangenome"),
                 category="contamination",
-                reading="{0}: no non-target taxon above the reporting floor.".format(
-                    detail))
-        names = ", ".join(
-            "{0} {1:.1%}".format(row.get("name") or "unnamed", row.get("fraction") or 0.0)
-            for row in sorted(foreign, key=lambda r: -(r.get("fraction") or 0.0))[:3])
+                reading="{0}: no non-target taxon above {1:.1%} of reads.".format(
+                    detail, KRAKEN2_REPORTING_FLOOR))
+        names = ", ".join("{0} {1:.1%}".format(label, frac)
+                          for label, frac in foreign[:3])
         return Check.boolean(
             "taxonomic_contamination_screen", share <= MAX_NON_TARGET_FRACTION,
             expected=True,
@@ -331,6 +332,34 @@ class TaxonomicScreen:
             reading="{0}: non-target reads present ({1}). The largest is "
                     "{2:.1%} against a {3:.1%} ceiling.".format(
                         detail, names, share, MAX_NON_TARGET_FRACTION))
+
+
+def _foreign_taxa(rows: Sequence[Dict[str, Any]]) -> List[Tuple[str, float]]:
+    """Named non-target species in a Kraken2 report, largest share first.
+
+    Restricted to species-rank rows. A Kraken2 report is hierarchical: its
+    ``root`` and ``Bacteria`` lines sit at 100%, and counting those as foreign
+    taxa would fail every sample ever screened.
+
+    ``percentage`` is 0-100 and every threshold here is a 0-1 fraction, so the
+    conversion is not cosmetic - comparing 99.1 against a ceiling of 0.10 and
+    comparing 0.991 against it give opposite answers.
+    """
+    found: List[Tuple[str, float]] = []
+    for row in rows:
+        if not str(row.get("rank") or "").startswith("S"):
+            continue
+        if row.get("collapsed_to_complex") or row.get("label") == MTBC_CLASSIFIER_LABEL:
+            continue
+        percentage = row.get("percentage")
+        if percentage is None:
+            continue
+        fraction = float(percentage) / 100.0
+        if fraction < KRAKEN2_REPORTING_FLOOR:
+            continue
+        found.append((str(row.get("label") or "unnamed"), fraction))
+    found.sort(key=lambda pair: -pair[1])
+    return found
 
 
 def parse_kraken2_report(text: str) -> List[Dict[str, Any]]:

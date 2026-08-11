@@ -817,7 +817,13 @@ def name_variant(annotation: Annotation, contig: str, position: int,
             return gene.label, gene.locus_tag, "", "no_change"
         pos, ref_base, alt_base = changed[0]
         hgvs, effect = _hgvs_snv(gene, sequence, pos, ref_base, alt_base)
-        if gene.coding and sequence and hgvs.startswith("p."):
+        # Not guarded on the single-base name being a protein change. If the
+        # lowest-coordinate changed base happens to be synonymous on its own,
+        # _hgvs_snv returns a c. name with effect synonymous_variant - and a
+        # genuine nonsense MNV then kept that name and that effect, so
+        # is_synonymous() was true, the novel-silent Group 4 rule fired and the
+        # loss-of-function rule did not. The whole codon decides.
+        if gene.coding and sequence:
             coding_position = gene.coding_offset(pos)
             if coding_position > 0:
                 codon_number = (coding_position - 1) // 3 + 1

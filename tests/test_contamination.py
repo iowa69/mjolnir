@@ -234,3 +234,73 @@ def test_a_wholly_malformed_report_raises_rather_than_estimating_over_nothing():
 
 def test_an_empty_report_is_empty_not_an_error():
     assert purity.parse_kraken2_report("") == []
+
+
+# ---------------------------------------------------------------------------
+# The screen must read the rows it was given
+# ---------------------------------------------------------------------------
+
+def _pangenome_index(tmp_path):
+    """An index directory that declares itself a mycobacterial pangenome."""
+    import json
+
+    (tmp_path / "mjolnir_index.json").write_text(
+        json.dumps({"mycobacterial_pangenome": True}))
+    return tmp_path
+
+
+_DIRTY_REPORT = (
+    "100.00\t100000\t0\tR\t1\troot\n"
+    "99.10\t99100\t99100\tS\t1280\t    Staphylococcus aureus\n"
+    "0.90\t900\t900\tS\t1773\t    Mycobacterium tuberculosis\n"
+)
+
+
+def test_a_contaminated_library_fails_the_screen_that_could_see_it(tmp_path):
+    """The screen having been possible is not the screen having been clean.
+
+    This branch once passed unconditionally without reading a row, and the first
+    attempt to fix it read keys the parser does not emit — is_target, fraction,
+    name — so every lookup returned None, the largest foreign share was always
+    0.0, and a library that was 99% *Staphylococcus aureus* still passed. The
+    tool ran the classifier, the classifier saw the contaminant, and the panel
+    vouched for the sample.
+    """
+    from mjolnir.contamination.purity import evaluate_kraken2_screen
+
+    check = evaluate_kraken2_screen(
+        _pangenome_index(tmp_path), confidence=0.1,
+        report_text=_DIRTY_REPORT).to_check()
+    assert check.status == "fail", check.reading
+    assert "Staphylococcus aureus" in (check.reading or "")
+
+
+def test_the_hierarchical_clade_rows_are_not_counted_as_contaminants(tmp_path):
+    """A Kraken2 report puts root and Bacteria at 100%.
+
+    Counting those as foreign taxa would fail every sample ever screened, so the
+    rank filter is load-bearing rather than tidiness.
+    """
+    from mjolnir.contamination.purity import evaluate_kraken2_screen
+
+    report = ("100.00\t100000\t0\tR\t1\troot\n"
+              "100.00\t100000\t0\tD\t2\t  Bacteria\n"
+              "99.90\t99900\t99900\tS\t1773\t    Mycobacterium tuberculosis\n")
+    check = evaluate_kraken2_screen(
+        _pangenome_index(tmp_path), confidence=0.1, report_text=report).to_check()
+    assert check.status == "pass", check.reading
+
+
+def test_the_percentage_column_is_converted_before_it_meets_a_fraction(tmp_path):
+    """kraken2 writes 0-100; every threshold here is 0-1.
+
+    Comparing 99.1 against a ceiling of 0.10 and comparing 0.991 against it give
+    opposite answers, so the conversion decides the result.
+    """
+    from mjolnir.contamination.purity import _foreign_taxa, parse_kraken2_report
+
+    foreign = _foreign_taxa(parse_kraken2_report(_DIRTY_REPORT))
+    assert foreign, "no foreign taxon found"
+    label, fraction = foreign[0]
+    assert label == "Staphylococcus aureus"
+    assert 0.98 < fraction < 1.0, fraction

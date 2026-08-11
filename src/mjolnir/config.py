@@ -978,6 +978,14 @@ ANI_SPECIES_FLOOR = _define(
 #: other. Registered here rather than derived in purity.py, because a clinical
 #: threshold defined outside the registry has no source and cannot be printed
 #: with one.
+#: SOURCE: Mjolnir policy. Kraken2 assigns a long tail of taxa at trace level,
+#: most of it database noise; below this share a named taxon is not evidence of
+#: contamination and listing it would bury the one row that is.
+KRAKEN2_REPORTING_FLOOR = _define(
+    "kraken2_reporting_floor", 0.005, "Mjolnir policy (design section 8)",
+    unit="fraction of reads",
+    note="share below which a classified taxon is not reported as contamination")
+
 MAX_NON_TARGET_FRACTION = _define(
     "max_non_target_fraction", 0.10, "Mjolnir policy (design section 8)",
     unit="fraction of reads",

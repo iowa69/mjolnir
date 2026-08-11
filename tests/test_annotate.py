@@ -404,3 +404,21 @@ def test_names_agree_with_the_who_catalogues_own_coordinate_sheet():
         "agreement with the WHO catalogue's own naming fell to {0:.2%} over {1} "
         "rows (floor {2:.0%}). Examples: {3}".format(
             ratio, total, WHO_AGREEMENT_FLOOR, misses))
+
+
+def test_a_nonsense_mnv_is_not_called_synonymous(genome):
+    """The whole codon decides, not the lowest-coordinate changed base.
+
+    If that base is synonymous on its own, ``_hgvs_snv`` returns a ``c.`` name
+    with effect ``synonymous_variant``. Guarding the whole-codon recomputation on
+    the single-base name being a protein change therefore let a genuine nonsense
+    MNV keep that name and that effect — so ``is_synonymous()`` was true, the
+    novel-silent Group 4 rule fired, and the loss-of-function rule did not.
+    """
+    # Codon 2 of geneA is GAC (Asp). GAC>GAA changes only the third base and is
+    # a real amino-acid change; the first changed base alone is not decisive.
+    position = genome["a_start"] + 3
+    _g, _l, hgvs, effect = A.name_variant(
+        genome["annotation"], "chr1", position, "GAC", "TGA")
+    assert effect == "stop_gained", (hgvs, effect)
+    assert hgvs.endswith("Ter"), hgvs
