@@ -183,7 +183,7 @@ def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
     destination = ensure_dir(panel_dir(db_root))
     rows: List[Tuple[str, str, str, str, bool]] = []
     tally = {"fetched": 0, "with_gene_models": 0, "skipped": 0, "reused": 0,
-             "mislabelled": 0}
+             "mislabelled": 0, "removed": 0}
 
     for entry in species:
         accession, organism = best_accession(entry.taxid)
@@ -241,7 +241,30 @@ def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
             "no reference genome could be fetched, so the panel would name "
             "nothing. Check network access to {0}".format(DATASETS_API))
     write_manifest(destination / MANIFEST_NAME, rows)
+    tally["removed"] = _remove_orphans(destination, {row[0] for row in rows})
     return tally
+
+
+def _remove_orphans(destination: Path, keep: set) -> int:
+    """Delete genomes the manifest no longer declares.
+
+    Left in place they are undeclared mycobacterial genomes sitting in the
+    directory the ANI call reads from - and the ones this exists to remove are
+    the genomes fetched under a wrong taxid, which are real organisms filed
+    under another organism's name. A panel that has corrected itself must not
+    leave the mistake on disk.
+    """
+    removed = 0
+    for path in sorted(destination.iterdir()):
+        if path.suffix != ".fna" or path.name in keep:
+            continue
+        for companion in (path, path.with_suffix(".gff"),
+                          Path(str(path) + ".mask.bed")):
+            if companion.exists():
+                companion.unlink()
+        LOG.info("removed %s: not in the panel manifest", path.name)
+        removed += 1
+    return removed
 
 
 def write_manifest(path: PathLike, rows: Sequence[Tuple[str, str, str, str, bool]]) -> Path:

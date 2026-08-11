@@ -473,6 +473,9 @@ def cmd_db(args: Any) -> int:
         print("  fetched            {0}".format(tally["fetched"]))
         print("  already present    {0}".format(tally["reused"]))
         print("  with gene models   {0}".format(tally["with_gene_models"]))
+        if tally.get("removed"):
+            print("  removed            {0} no longer in the panel".format(
+                tally["removed"]))
         if tally["skipped"]:
             print("  unavailable        {0} (named in the log above)".format(
                 tally["skipped"]))
