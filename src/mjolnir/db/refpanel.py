@@ -81,19 +81,19 @@ PANEL: Tuple[PanelSpecies, ...] = (
     PanelSpecies(1768, "Mycobacterium kansasii"),
     PanelSpecies(1781, "Mycobacterium marinum"),
     PanelSpecies(1769, "Mycolicibacterium fortuitum"),
-    PanelSpecies(1794, "Mycobacterium gordonae",
+    PanelSpecies(1778, "Mycobacterium gordonae",
                  "the commonest contaminant of mycobacterial culture"),
     PanelSpecies(1789, "Mycobacterium xenopi"),
-    PanelSpecies(1428, "Mycobacterium malmoense"),
+    PanelSpecies(1780, "Mycobacterium malmoense"),
     PanelSpecies(1784, "Mycobacterium simiae"),
     PanelSpecies(1787, "Mycobacterium szulgai"),
     PanelSpecies(1809, "Mycobacterium ulcerans"),
-    PanelSpecies(1770, "Mycobacterium haemophilum"),
+    PanelSpecies(29311, "Mycobacterium haemophilum"),
     PanelSpecies(56689, "Mycolicibacterium mucogenicum"),
-    PanelSpecies(1774, "Mycolicibacterium smegmatis",
+    PanelSpecies(1772, "Mycolicibacterium smegmatis",
                  why="a laboratory strain, and a contaminant worth naming"),
     PanelSpecies(1096, "Mycobacterium leprae"),
-    PanelSpecies(1305, "Mycolicibacterium phlei"),
+    PanelSpecies(1771, "Mycolicibacterium phlei"),
 )
 
 
@@ -151,6 +151,19 @@ def panel_dir(db_root: PathLike) -> Path:
     return Path(str(db_root)).expanduser() / PANEL_DIRNAME
 
 
+def _same_organism(requested: str, reported: str) -> bool:
+    """Whether NCBI's organism name is the species that was asked for.
+
+    Compared on the first two words, so a subspecies or a strain suffix is
+    accepted - "Mycobacterium avium subsp. hominissuis" answers a request for
+    "Mycobacterium avium" - while a different species is not.
+    """
+    def head(text):
+        parts = str(text or "").replace("[", "").replace("]", "").split()
+        return " ".join(parts[:2]).lower()
+    return bool(reported) and head(requested) == head(reported)
+
+
 def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
                 overwrite: bool = False, pause: float = 0.4) -> Dict[str, int]:
     """Fetch the panel and write its manifest. Returns a small tally.
@@ -161,7 +174,8 @@ def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
     """
     destination = ensure_dir(panel_dir(db_root))
     rows: List[Tuple[str, str, str, str, bool]] = []
-    tally = {"fetched": 0, "with_gene_models": 0, "skipped": 0, "reused": 0}
+    tally = {"fetched": 0, "with_gene_models": 0, "skipped": 0, "reused": 0,
+             "mislabelled": 0}
 
     for entry in species:
         accession, organism = best_accession(entry.taxid)
@@ -169,11 +183,24 @@ def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
             LOG.warning("no assembly found for %s (taxid %d)", entry.name, entry.taxid)
             tally["skipped"] += 1
             continue
+        # The taxid is a number a human typed, and a wrong one returns a real
+        # genome for the wrong organism. Taxid 1770 is M. avium subsp.
+        # paratuberculosis, not M. haemophilum, and the panel carried that
+        # genome under the wrong name until a sample matched it at 98.5% and the
+        # number made no biological sense. What NCBI says the genome is wins.
+        if not _same_organism(entry.name, organism):
+            LOG.warning(
+                "taxid %d returned %r, which is not %r; skipping rather than "
+                "adding a genome under a name that is not its own",
+                entry.taxid, organism, entry.name)
+            tally["mislabelled"] = tally.get("mislabelled", 0) + 1
+            tally["skipped"] += 1
+            continue
         fasta_path = destination / "{0}.fna".format(accession)
         gff_path = destination / "{0}.gff".format(accession)
         if fasta_path.exists() and not overwrite:
-            rows.append((fasta_path.name, entry.name, entry.complex, accession,
-                         gff_path.exists()))
+            rows.append((fasta_path.name, organism or entry.name, entry.complex,
+                         accession, gff_path.exists()))
             tally["reused"] += 1
             if gff_path.exists():
                 tally["with_gene_models"] += 1
@@ -192,7 +219,10 @@ def build_panel(db_root: PathLike, *, species: Sequence[PanelSpecies] = PANEL,
         if gff:
             gff_path.write_bytes(gff)
             tally["with_gene_models"] += 1
-        rows.append((fasta_path.name, entry.name, entry.complex, accession, bool(gff)))
+        # NCBI's name, not the one that was asked for: they agree by the check
+        # above, and where they differ in detail the authority is the record.
+        rows.append((fasta_path.name, organism or entry.name, entry.complex,
+                     accession, bool(gff)))
         tally["fetched"] += 1
         LOG.info("panel: %s -> %s%s", entry.name, accession,
                  "" if gff else " (NO gene models)")

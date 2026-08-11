@@ -411,6 +411,10 @@ class Pipeline(object):
         #: The gene models the current sample was annotated with, kept so the
         #: NTM path can locate erm(41) without loading the GFF a second time.
         self._annotation: Any = None
+        #: True when resolve_reference picked the genome rather than the
+        #: operator naming it, which decides whether an aligner index may be
+        #: built without being asked for.
+        self._reference_was_auto_selected: bool = False
         #: Filled by :meth:`run_sample` when ``options.callable_regions`` is on.
         self.sample_variants: Dict[str, SampleVariants] = {}
 
@@ -833,6 +837,8 @@ class Pipeline(object):
         # chosen must not appear in the next sample's caveats.
         self.reference_notes = []
         self._annotation = None
+        self._reference_was_auto_selected = (
+            sample.reference is None and self.config.reference is None)
         reference = self.resolve_reference(sample, provisional)
         result.reference = str(reference)
         contigs = read_fai(reference)
@@ -856,7 +862,13 @@ class Pipeline(object):
                 threads=self.config.threads,
                 mapper=self.options.mapper or None,
                 mark_duplicates=self.options.mark_duplicates,
-                build_index=self.options.build_index,
+                # Built automatically when Mjolnir chose the reference itself.
+                # The panel holds 27 genomes and the one used is decided by ANI
+                # at run time, so an operator cannot know in advance which to
+                # index - refusing here means every new species fails once, for
+                # a reason that is nobody's mistake.
+                build_index=(self.options.build_index
+                             or self._reference_was_auto_selected),
                 config=self.config)
             if alignment is not None:
                 bam = alignment.bam

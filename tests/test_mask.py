@@ -243,3 +243,36 @@ def test_panel_status_reports_nothing_when_nothing_is_installed(tmp_path):
     from mjolnir.db import refpanel
 
     assert refpanel.panel_status(tmp_path) == {"references": 0, "with_gene_models": 0}
+
+
+def test_a_taxid_that_returns_another_organism_is_refused():
+    """A taxid is a number a human typed, and a wrong one returns a real genome.
+
+    Taxid 1770 is *M. avium* subsp. *paratuberculosis*, not *M. haemophilum*.
+    The panel carried that genome under the wrong name until a sample matched it
+    at 98.5% ANI and the number made no biological sense — *M. haemophilum* and
+    *M. avium* are nowhere near that close. A mislabelled reference produces a
+    confidently wrong species call, which is the one output this project exists
+    to prevent, so the name NCBI reports for the genome wins.
+    """
+    from mjolnir.db.refpanel import _same_organism
+
+    assert not _same_organism("Mycobacterium haemophilum",
+                              "Mycobacterium avium subsp. paratuberculosis")
+    assert not _same_organism("Mycobacterium gordonae", "Mycobacterium paragordonae")
+
+
+def test_a_subspecies_still_answers_a_species_request():
+    """Refusing these would empty the panel for no benefit."""
+    from mjolnir.db.refpanel import _same_organism
+
+    assert _same_organism("Mycobacterium avium",
+                          "Mycobacterium avium subsp. hominissuis")
+    assert _same_organism("Mycobacteroides abscessus", "Mycobacteroides abscessus")
+
+
+def test_an_empty_organism_name_is_not_a_match():
+    """Absence of a name is not agreement with one."""
+    from mjolnir.db.refpanel import _same_organism
+
+    assert not _same_organism("Mycobacterium avium", "")
