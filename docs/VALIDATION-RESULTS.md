@@ -48,7 +48,38 @@ The call is reported as **MAC, not resolved to species**, because §6 requires
 marker SNPs inside MAC and no marker file is installed. That is the designed
 answer, not a failure.
 
-### The cohort refused to produce a number it could not stand behind
+### The cohort now compares, and the denominator promise held on real data
+
+*Superseded by the 2026-08-11 afternoon run; the refusal described below was
+correct and its cause is now fixed.* Four *M. chimaera* isolates — two clinical
+from one hospital, one from **water**, one from a **heater-cooler unit** — run at
+a 6-SNP threshold against a computed repeat mask (277,412 bp, 4.52%):
+
+| pair | SNPs | shared callable sites |
+|---|---|---|
+| 30-20 vs 31-20 (both clinical, same site) | **12** | 5,572,304 |
+| 240-19 (water) vs 30-20 | 20,510 | 5,156,129 |
+| 240-19 (water) vs 31-20 | 20,509 | 5,155,550 |
+| 102-20 (heater-cooler) vs any | **not computed** | — |
+
+No clusters at 6 SNPs: the two same-site clinical isolates sit at 12, outside the
+threshold the original investigation used, and the water isolate is four orders
+of magnitude away — a clean negative control.
+
+**102-20 is the result that matters most.** Its callable regions were lost when
+`samtools depth` was killed, so every pair involving it is reported `NA` with the
+reason — *"the shared callable region of this pair is unknown, so a distance
+would have no denominator"* — rather than as a distance of zero. A zero there
+would have placed an unrelatable isolate at the centre of the outbreak. The
+promise that a distance cannot be obtained without its denominator held on real
+data, under a real failure, unprompted.
+
+Every row also itemises what was excluded: variant positions inside the mask,
+positions with no comparable allele, indels not counted as SNPs, differences
+dropped by the 12 bp proximity rule, and positions outside the shared callable
+region.
+
+### The earlier cohort refusal, and why it was right
 
 Four chimaera isolates — two clinical from one hospital, one from **water**, one
 from a **heater-cooler unit** — were run as a cohort at a 6-SNP threshold, the
@@ -181,11 +212,11 @@ covering MTBC, MAC, *M. abscessus*, *M. kansasii*, *M. marinum* and
 - **MAC marker SNPs**, so *chimaera* can be resolved below the complex.
 - **Phenotypic DST truth** for a resistance-accuracy claim. The drives on hand
   carry no MTB at all and the ENA samples have no DST attached.
-- **An NTM repeat mask.** Without one, cohort mode refuses to compare NTM
-  isolates at all, so the outbreak-structure test cannot run. This blocks the
-  chimaera collection entirely and is second only to annotation.
-- **The full 159-isolate chimaera collection.** Four samples were run here;
-  the outbreak-structure test in `VALIDATION.md` §2.2 needs the whole set, and
-  needs the mask above first.
+- **The full 159-isolate chimaera collection.** Four samples were run here; the
+  outbreak-structure test in `VALIDATION.md` §2.2 needs the whole set. The two
+  blockers that prevented it — annotation and the NTM mask — are now closed.
+- **Why `samtools depth` was killed (exit -9) on two samples.** Memory was not
+  exhausted when checked afterwards. It costs that sample its coverage metrics
+  and its cohort comparability, so it needs reproducing rather than guessing.
 - **ONT.** No nanopore mycobacterial data was run. Every ONT threshold in the
   tool is still untested.
