@@ -663,6 +663,11 @@ def rule_headline(result: SampleResult) -> str:
             parts.append("{0} rests on a catalogue other than WHO at a variant WHO "
                          "does not grade, and is not equivalent to a WHO Group 1 "
                          "call.".format(", ".join(outside)))
+    elif result.drugs and not variants_were_measured(result):
+        parts.append(
+            "No drug was assessed: variant calling produced no result for this "
+            "sample, so nothing was searched for. This is not the same as "
+            "nothing being found.")
     elif result.drugs:
         parts.append("{0} was reported for all {1} drugs evaluated; no catalogued "
                      "mutation was found, which is not evidence of "
@@ -785,14 +790,11 @@ CALL_NOT_ASSESSED = "not-assessed"
 def variants_were_measured(result: SampleResult) -> bool:
     """Whether this sample got as far as producing a variant call.
 
-    Read from the checks rather than from ``len(result.variants)``: a genuine
-    zero-variant sample and a sample whose caller died both have an empty list,
-    and only one of them supports the sentence "no determinant was detected".
+    Delegates to the record so the report and the flat artefacts cannot answer
+    this differently — they used to, and the TSV kept saying "no-call" for a
+    sample the PDF had already marked not assessed.
     """
-    for check in result.all_checks():
-        if check.name in ("variant_calling", "sample_analysed") and not check.measured:
-            return False
-    return True
+    return result.variants_measured()
 
 
 def consultable_catalogues(result: SampleResult) -> Dict[str, bool]:

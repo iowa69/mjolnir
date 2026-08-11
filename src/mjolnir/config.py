@@ -972,6 +972,17 @@ ANI_SPECIES_FLOOR = _define(
 #: c.-669 (mshA) and the catalogue's own upstream rows sit inside this window,
 #: so a narrower one would drop Group 1 determinants - eis c.-14C>T and
 #: inhA c.-154G>A among them - and report them as intergenic.
+#: SOURCE: Mjolnir policy, tied to MIN_MAPPED_FRACTION so the two cannot drift:
+#: reads that do not belong to the target are the same reads that fail to map to
+#: it, and a sample may not be called clean on one measure while failing the
+#: other. Registered here rather than derived in purity.py, because a clinical
+#: threshold defined outside the registry has no source and cannot be printed
+#: with one.
+MAX_NON_TARGET_FRACTION = _define(
+    "max_non_target_fraction", 0.10, "Mjolnir policy (design section 8)",
+    unit="fraction of reads",
+    note="non-target read fraction above which a sample is not clean")
+
 PROMOTER_UPSTREAM_BP = _define(
     "promoter_upstream_bp", 1000, SRC_WHO_V2, unit="bp",
     note="how far before a start codon a variant is still named for that gene")

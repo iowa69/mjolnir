@@ -91,6 +91,11 @@ CALL_UNCERTAIN = "Uncertain"
 CALL_S_INTERIM = "S-interim"
 CALL_S = "S"
 CALL_NO_CALL = "no-call"
+
+#: A drug that was never searched, because variant calling produced nothing for
+#: the sample. Distinct from ``no-call``, which reports a search that found
+#: nothing, and from ``S``, which reports a positive graded finding.
+CALL_NOT_ASSESSED = "not-assessed"
 CALL_R_OUTSIDE_WHO = "R-outside-WHO"
 RESISTANCE_CALLS: Tuple[str, ...] = (
     CALL_R, CALL_R_INTERIM, CALL_UNCERTAIN, CALL_S_INTERIM, CALL_S,
@@ -957,6 +962,18 @@ class SampleResult(_Record):
     def overall_status(self) -> str:
         return worst_status([c.status for c in self.all_checks()])
 
+    def variants_measured(self) -> bool:
+        """Whether this sample got as far as producing a variant call.
+
+        Read from the checks, not from ``len(self.variants)``: a genuine
+        zero-variant sample and a sample whose caller died both have an empty
+        list, and only one of them supports the phrase "no determinant detected".
+        """
+        for check in self.all_checks():
+            if check.name in ("variant_calling", "sample_analysed") and not check.measured:
+                return False
+        return True
+
     def summary_row(self) -> Dict[str, Any]:
         """One flat row for the cohort TSV."""
         row: Dict[str, Any] = {
@@ -978,8 +995,14 @@ class SampleResult(_Record):
             "n_variants": len(self.variants),
             "status": self.status or self.overall_status(),
         }
+        # A sample whose caller failed must not be written as "no-call", the
+        # token this codebase defines as "searched and found nothing". The flat
+        # TSV is what gets loaded into a spreadsheet and read without the
+        # caveats, so the distinction has to survive into the cell itself.
+        measured = self.variants_measured()
         for call in sorted(self.drugs, key=lambda d: natural_key(d.drug)):
-            row["drug_" + call.drug.lower().replace(" ", "_")] = call.call
+            row["drug_" + call.drug.lower().replace(" ", "_")] = (
+                call.call if measured else CALL_NOT_ASSESSED)
         row["disagreements"] = ";".join(d.drug for d in self.disagreements())
         row["warnings"] = "; ".join(self.warnings)
         return row

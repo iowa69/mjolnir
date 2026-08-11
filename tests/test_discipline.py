@@ -285,3 +285,62 @@ def test_an_unevaluable_drug_may_not_be_called_susceptible_either():
     verdict = discipline.review("Pyrazinamide is susceptible.", CONTEXT, facts)
     assert not verdict
     assert verdict.rule == "susceptible-for-no-determinant"
+
+
+# ---------------------------------------------------------------------------
+# The negation window
+# ---------------------------------------------------------------------------
+
+def test_a_stray_negative_word_does_not_exempt_a_susceptibility_claim():
+    """The guard was exempted by any "no" or "not" anywhere in the sentence.
+
+    Asserting susceptibility is the model's single most dangerous output — a
+    genome cannot establish it — and the test that stops it was defeated by an
+    unrelated negative word earlier in the same sentence.
+    """
+    from mjolnir.agent.discipline import claims_susceptibility
+
+    caught = claims_susceptibility(
+        "There is no doubt the isolate is susceptible to rifampicin.",
+        ["Rifampicin"])
+    assert caught is not None
+
+
+def test_a_negation_that_really_cancels_the_claim_is_still_exempt():
+    """"this is not a prediction of susceptibility" is the sentence we want."""
+    from mjolnir.agent.discipline import claims_susceptibility
+
+    assert claims_susceptibility(
+        "This is not a prediction of susceptibility for rifampicin.",
+        ["Rifampicin"]) is None
+
+
+def test_the_window_is_measured_from_the_susceptibility_word():
+    """The pattern has branches that begin at the copula.
+
+    Measuring the window from the start of the match reaches back over the very
+    words it exists to exclude, which is how the bare-negation bypass survived
+    the first attempt at this fix.
+    """
+    from mjolnir.agent.discipline import claims_susceptibility
+
+    assert claims_susceptibility(
+        "Not one determinant was found, and the isolate is susceptible to "
+        "rifampicin.", ["Rifampicin"]) is not None
+
+
+def test_a_hedged_sentence_remains_exempt():
+    """Refusing to conclude susceptibility is not asserting it."""
+    from mjolnir.agent.discipline import claims_susceptibility
+
+    assert claims_susceptibility(
+        "It cannot be assumed the isolate is susceptible to rifampicin.",
+        ["Rifampicin"]) is None
+
+
+def test_the_sanctioned_wording_is_never_flagged():
+    from mjolnir.agent.discipline import claims_susceptibility
+
+    assert claims_susceptibility(
+        "No resistance determinant was detected for rifampicin.",
+        ["Rifampicin"]) is None

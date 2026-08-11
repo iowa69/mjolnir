@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..config import (
+    MAX_NON_TARGET_FRACTION as _MAX_NON_TARGET_FRACTION,
     ANI_MIN_ALIGNED_FRACTION,
     ANI_SPECIES_FLOOR,
     COMPLEX_MAC,
@@ -301,14 +302,35 @@ class TaxonomicScreen:
                 "{0} {1}".format(SCREEN_UNINFORMATIVE_HEADLINE, self.note).strip(),
                 source=source_for("kraken2_mtb_sensitivity_standard"),
                 category="contamination")
+        # The screen having been *possible* is not the screen having been
+        # *clean*. This branch used to pass unconditionally without reading a
+        # single row, so a genuinely contaminated sample on a good pangenome
+        # index reported a passing contamination check - which is the one thing
+        # this module exists to make impossible.
+        reportable = self.reportable_rows()
+        foreign = [row for row in reportable if not row.get("is_target")]
+        share = max((row.get("fraction") or 0.0) for row in foreign) if foreign else 0.0
+        detail = "{0} against {1} at --confidence {2}".format(
+            self.method or "taxonomic screen", self.index or "an index",
+            self.confidence)
+        if not foreign:
+            return Check.boolean(
+                "taxonomic_contamination_screen", True, expected=True,
+                source=source_for("kraken2_mtb_sensitivity_pangenome"),
+                category="contamination",
+                reading="{0}: no non-target taxon above the reporting floor.".format(
+                    detail))
+        names = ", ".join(
+            "{0} {1:.1%}".format(row.get("name") or "unnamed", row.get("fraction") or 0.0)
+            for row in sorted(foreign, key=lambda r: -(r.get("fraction") or 0.0))[:3])
         return Check.boolean(
-            "taxonomic_contamination_screen", True, expected=True,
+            "taxonomic_contamination_screen", share <= MAX_NON_TARGET_FRACTION,
+            expected=True,
             source=source_for("kraken2_mtb_sensitivity_pangenome"),
             category="contamination",
-            reading="{0} against {1} at --confidence {2}; sensitivity for "
-                    "M. tuberculosis reads on such an index is about {3}".format(
-                        self.method or "taxonomic screen", self.index or "an index",
-                        self.confidence, KRAKEN2_MTB_SENSITIVITY_PANGENOME))
+            reading="{0}: non-target reads present ({1}). The largest is "
+                    "{2:.1%} against a {3:.1%} ceiling.".format(
+                        detail, names, share, MAX_NON_TARGET_FRACTION))
 
 
 def parse_kraken2_report(text: str) -> List[Dict[str, Any]]:
@@ -524,7 +546,9 @@ def measure_purity(qc: Optional[QCMetrics], platform: str,
 #: the reads that did not map to the chosen reference are exactly the reads a
 #: non-target assignment is trying to account for, so the two numbers are one
 #: number and must not drift apart.
-MAX_NON_TARGET_FRACTION = 1.0 - MIN_MAPPED_FRACTION
+#: Imported from the registry rather than derived here, so it carries a
+#: source and appears in `all_thresholds()` like every other number.
+MAX_NON_TARGET_FRACTION = _MAX_NON_TARGET_FRACTION
 
 RESOLUTION_SPECIES = "species"
 RESOLUTION_COMPLEX = "complex"

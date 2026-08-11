@@ -383,11 +383,47 @@ def claims_susceptibility(prose: str, drugs: Iterable[str]) -> Optional[str]:
         match = _SUSCEPTIBLE.search(sentence)
         if not match:
             continue
-        if _NEGATED.search(sentence) or _HEDGED.search(sentence):
+        if _negation_governs(sentence, _claim_word_at(sentence, match)) \
+                or _HEDGED.search(sentence):
             continue
         if not names or any(mentions_drug(sentence, drug) for drug in names):
             return sentence
     return None
+
+
+#: How many words a negation may sit before the claim it cancels. SOURCE:
+#: Mjolnir policy. Scoped rather than sentence-wide because a sentence-wide test
+#: is defeated by any unrelated negative word: "there is no doubt the isolate is
+#: susceptible to rifampicin" contains "no", and was exempted from the one guard
+#: that exists to stop the model asserting susceptibility.
+NEGATION_SCOPE_WORDS = 4
+
+
+_CLAIM_WORD = re.compile(r"susceptib|sensitiv|activity", re.IGNORECASE)
+
+
+def _claim_word_at(sentence: str, match) -> int:
+    """Where the susceptibility word itself starts, not where the match does.
+
+    ``_SUSCEPTIBLE`` has branches that begin at the copula, so a match on "is
+    susceptible" starts at "is" - and measuring the negation window from there
+    reaches back over the very words the window exists to exclude.
+    """
+    inner = _CLAIM_WORD.search(sentence, match.start(), match.end())
+    return inner.start() if inner else match.start()
+
+
+def _negation_governs(sentence: str, claim_at: int) -> bool:
+    """Whether a negation actually cancels the claim starting at *claim_at*.
+
+    "this is not a prediction of susceptibility" negates the claim; "there is no
+    doubt the isolate is susceptible" asserts it. Both contain a negation and
+    only one of them is exempt, so the test is proximity rather than presence.
+    """
+    before = sentence[:claim_at]
+    words = re.findall(r"[\w'-]+", before)
+    window = " ".join(words[-NEGATION_SCOPE_WORDS:])
+    return bool(_NEGATED.search(window))
 
 
 def contradicts_drug_calls(prose: str, resistant: Iterable[str],
