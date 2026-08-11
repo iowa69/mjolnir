@@ -4,9 +4,12 @@ Run 2026-08-11 on the machine Mjolnir was written on. Everything below was
 measured; nothing is projected. Where a run establishes agreement rather than
 correctness, it says so.
 
-**Headline: the tool works end to end, and validation found one missing feature
-and five defects that 607 unit tests did not.** Four of the defects are fixed;
-the missing feature is characterised below and is not fixed.
+**Headline: the tool works end to end. Validating it found one missing feature
+and thirteen defects that the unit suite did not — because every one of them
+lived in the plumbing between tested functions, or needed real data to appear.**
+All are now fixed, and each carries a regression test. Three adversarial review
+passes over the code found six more, including the worst defect this project has
+had; those are in §5.
 
 ---
 
@@ -118,38 +121,47 @@ it did not report the sample as clean. The refusal in §8 works in production.
 
 ---
 
-## 2. The missing feature — read this before trusting a consensus
+## 2. The gap that validation found, and how it was closed
 
-**No module in Mjolnir attaches gene names to called variants.** Measured:
+When this document was first written, **no module attached gene names to called
+variants**. WHO is matched on genomic coordinates and worked; MTBseq and tbdb are
+keyed on `<gene>_<hgvs>` and matched nothing at all:
 
-| Sample | Variants called | With a gene name | WHO rows matched | MTBseq | tbdb |
+| Sample | Variants | With a gene name | WHO | MTBseq | tbdb |
 |---|---|---|---|---|---|
-| *M. bovis* `ERR11267966` | 3,013 | **0** | 110 | **0** | **0** |
-| *M. chimaera* `OSR-30-20` | 5,050 | **0** | 0 | **0** | **0** |
+| *M. bovis* `ERR11267966`, before | 3,013 | **0** | 110 | **0** | **0** |
+| *M. bovis* `ERR11267966`, after | 3,013 | **2,976** | 120 | 1 | **99** |
 
-WHO is matched on genomic coordinates, so it works. MTBseq and tbdb are matched
-on the `<gene>_<hgvs>` key, so with no annotation they cannot match anything.
+So the "consensus across three catalogues" was WHO alone, and the NTM
+`erm(41)` / `rrl` / `rrs` rules — all gene-keyed — could never fire.
 
-Three consequences, all live:
+`engines/annotate.py` closes it. Naming has to match the catalogues *exactly* —
+`rpoB_p.Ser450Leu` and `rpoB_p.S450L` are the same mutation and different
+dictionary keys — so it is written against a gold standard rather than a
+specification: the WHO catalogue ships a `Genomic_coordinates` sheet mapping
+144,964 coordinate triples to the name WHO itself uses. Agreement went
+**17.95% → 79.54% → 90.55% → 95.19%** as each class of mismatch was read and
+fixed, and the suite now replays a deterministic sample of that sheet and fails
+below 93%.
 
-1. **The three-catalogue consensus is WHO-only in practice.** The
-   `R (outside WHO catalogue)` result — the whole point of consulting the other
-   two — cannot currently arise from real data.
-2. **The NTM resistance rules never fire.** `erm(41)` sequevar typing, `rrl`
-   2058/2059 and `rrs` 1408 are all gene-keyed. On the chimaera isolate they
-   were reported as not established, which is honest but means NTM resistance is
-   presently unimplemented in effect.
-3. **A chimaera isolate matches no catalogue at all**, so its resistance section
-   is empty rather than wrong.
+What the gold standard taught, in order:
 
-The report no longer disguises this: catalogue columns that could not be
-consulted render as `--` with a legend entry saying so, instead of `ND`, which
-would have read as "that catalogue looked and found nothing".
+- The GFF calls rRNA genes `rRNA_gene`, not `gene`, so **`rrs` and `rrl` were
+  invisible** — the two genes carrying every aminoglycoside and macrolide
+  determinant in both MTBC and NTM.
+- A multi-base substitution is not an indel, and maps to several graded variants.
+- WHO pools loss of function under `<gene>_LoF` rather than naming each
+  frameshift, so a precise coordinate name matches nothing for exactly the
+  `pncA` and `katG` mutations that matter most.
+- Start-codon changes are named in nucleotides, not as `p.Met1Ile`.
+- The same indel can be written at several offsets, and equivalence is at the
+  **protein** level: `dnaA` codons 111 and 112 are `ACT` and `ACC`, different DNA
+  and both threonine, so WHO files the deletion as `Thr112del`.
 
-**This is a missing feature, not a bug to patch quickly.** A correct annotator
-has to get codon numbering, strand, promoter offsets and indel representation
-right, and getting them wrong produces confidently wrong clinical calls. It is
-the top item of remaining work.
+**Still open:** MAC marker SNPs, so *M. chimaera* can be resolved below the
+complex; and no NTM reference has a GFF, so NTM variants remain unnamed and the
+NTM resistance rules still do not fire on real NTM data. That is now a
+data-availability problem rather than a missing capability.
 
 ---
 
@@ -220,3 +232,52 @@ covering MTBC, MAC, *M. abscessus*, *M. kansasii*, *M. marinum* and
   and its cohort comparability, so it needs reproducing rather than guessing.
 - **ONT.** No nanopore mycobacterial data was run. Every ONT threshold in the
   tool is still untested.
+
+---
+
+## 5. What three adversarial review passes found
+
+Each pass ran several independent reviewers over a defined area, and every
+finding was then attacked by a separate verifier whose default was that the
+finding was wrong. Only survivors are listed.
+
+### Pass 1 — the new science code
+
+**A deletion removing a gene's start codon was an "upstream variant".** The
+worst defect this project has had. `_hgvs_indel` classified a deletion by where
+it *started*, so one beginning upstream and running into the gene was named
+`c.-2_3delGTATG` with effect `upstream_variant` — even when it removed the whole
+start codon, even when it removed most of the CDS. `is_loss_of_function()` then
+returned False, the WHO loss-of-function rule never fired, and **a complete
+`pncA` knockout — definitive pyrazinamide resistance — produced no determinant
+at all.** A real WHO row, the 950 bp deletion at 2288689 that WHO grades
+`pncA_p.Met1?`, came out as a regulatory nucleotide change. Absence of the gene
+product rendered as normality, in the gene that defines the drug.
+
+**A frameshift insertion named a codon one too low at codon boundaries.** On the
+plus strand the inserted bases land *after* the anchor, so naming the anchor's
+own codon is wrong whenever the anchor sits on a boundary. That flipped the rpoB
+RRDR rule in both directions — on rifampicin, the drug the rule exists for —
+manufacturing a Group 2 determinant from a frameshift beginning outside the
+region and dropping one beginning at its first codon.
+
+**Gene lookup ignored the contig.** `genes_at()` filtered on coordinate alone
+and never read the contig it had already parsed. H37Rv has one replicon so this
+happened to work; the *M. chimaera* reference has three, and a variant at
+position 300 of a plasmid was matched against whichever gene spanned position
+300 of the chromosome.
+
+**A multi-base substitution took its name from its first base.** `GCT>TGA` is a
+stop codon; read one base at a time it was called a serine substitution — a
+nonsense mutation presented as missense.
+
+**Three separate "it did not happen, so it was fine" defects.** Drug rows printed
+`ND` — no determinant detected — for a sample whose variant caller had died;
+the annotation check reported pass whatever it produced, including nothing; and
+the mask refusal, which exists because distances through an over-large mask
+would not mean anything, was caught and downgraded to a stderr warning.
+
+**The reference note never reached a report.** `result.caveats.extend(...)` ran
+before the note explaining that a sample was mapped to the nearest genome by ANI
+had been created — a note that changes what every coordinate in that report
+means.
