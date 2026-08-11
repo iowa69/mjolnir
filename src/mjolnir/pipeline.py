@@ -397,6 +397,11 @@ class Pipeline(object):
         self.tools_used: Set[str] = set()
         #: Databases actually consulted, for the version annex.
         self.databases_used: Set[str] = set()
+        #: Notes about how the mapping reference was chosen, raised into
+        #: the sample's caveats. A reference picked by ANI proximity rather
+        #: than by a species call changes what every coordinate means, so
+        #: it has to reach the report rather than only the log.
+        self.reference_notes: List[str] = []
         #: Filled by :meth:`run_sample` when ``options.callable_regions`` is on.
         self.sample_variants: Dict[str, SampleVariants] = {}
 
@@ -574,6 +579,27 @@ class Pipeline(object):
             if fallback is not None:
                 return fallback
 
+        # Not resolved to a species, but ANI still named the genome this isolate
+        # is nearest to. Mapping to that is not the failure this method guards
+        # against: refusing to name a MAC isolate below the complex is the honest
+        # answer (design §6), and the nearest genome is the right thing to call
+        # it against. Without this branch every M. chimaera isolate stops here,
+        # because "cannot resolve below complex" is the correct species result
+        # and it left no reference behind.
+        nearest = self._nearest_reference(species)
+        if nearest is not None:
+            path, name, ani = nearest
+            LOG.info("%s: species not resolved below %s; calling against the "
+                     "nearest reference by ANI, %s (%.2f%%)",
+                     sample.sample_id, species.complex or "genus", name, ani)
+            self.reference_notes.append(
+                "the species could not be resolved below {0}, so this sample was "
+                "called against the nearest genome in the ANI reference set, {1} "
+                "at {2:.2f}% — variant positions are relative to that genome and "
+                "not to a genome of the sample's own species".format(
+                    species.complex or "genus", name, ani))
+            return path
+
         raise MjolnirError(
             "no reference could be chosen for sample {0!r}: the species call is "
             "{1!r} and no genome for it is installed.\n"
@@ -582,6 +608,34 @@ class Pipeline(object):
                 species.display if species is not None else "not determined",
                 ANI_FETCH_HINT)
         )
+
+    def _nearest_reference(self, species: Optional[SpeciesCall]
+                           ) -> Optional[Tuple[Path, str, float]]:
+        """The installed genome the sample is closest to, by the ANI candidates.
+
+        Returns ``(path, name, ani)``, or None when there are no candidates or
+        none of them clears the genus floor — a query that matches nothing in the
+        set is not a mycobacterium the set can speak for, and guessing a
+        reference for it would put every downstream coordinate in the wrong
+        genome without saying so.
+        """
+        if species is None or not species.candidates:
+            return None
+        by_name = {}
+        for reference in self.references():
+            if reference.exists:
+                by_name.setdefault(reference.name.strip().lower(), reference)
+        for candidate in species.candidates:
+            ani = candidate.get("ani_percent")
+            name = str(candidate.get("name") or "").strip()
+            if ani is None or not name:
+                continue
+            if float(ani) < config.ANI_GENUS_FLOOR:
+                break
+            reference = by_name.get(name.lower())
+            if reference is not None:
+                return Path(reference.path), reference.name, float(ani)
+        return None
 
     def _mtbseq_ntm_reference(self, species_name: str) -> Optional[Path]:
         """One of the three NTM genomes MTBseq ships, when it matches the call."""
@@ -642,6 +696,7 @@ class Pipeline(object):
         )
         result.checks.extend(evidence_checks)
         result.caveats.extend(config.platform_caveats(platform))
+        result.caveats.extend(self.reference_notes)
         if platform != PLATFORM_FASTA:
             result.caveats.append(NO_TRIMMING_NOTE)
         if platform == PLATFORM_ONT:
@@ -691,6 +746,9 @@ class Pipeline(object):
                          config.SPECIES_METHOD_REFUSAL])
         result.species = provisional
 
+        # Cleared per sample: a note about how one sample's reference was
+        # chosen must not appear in the next sample's caveats.
+        self.reference_notes = []
         reference = self.resolve_reference(sample, provisional)
         result.reference = str(reference)
         contigs = read_fai(reference)

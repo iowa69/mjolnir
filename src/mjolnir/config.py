@@ -961,6 +961,18 @@ ANI_SPECIES_FLOOR = _define(
     "ani_species_floor", 95.0, SRC_ANI_SPECIES, unit="percent ANI",
     note="ANI below which Mjolnir will not name a species")
 
+#: SOURCE: Mjolnir policy, informed by the ~80% ANI that separates Mycobacterium
+#: from its neighbours. Not a species boundary and never used as one: this is the
+#: floor below which a hit is not close enough for its genome to serve as a
+#: mapping reference for the query. A query under it is not something the
+#: mycobacterial reference set can speak for, and calling variants against a
+#: genome that distant would put every coordinate in the wrong organism without
+#: saying so.
+ANI_GENUS_FLOOR = _define(
+    "ani_genus_floor", 80.0, "Mjolnir policy (design section 6)",
+    unit="percent ANI",
+    note="ANI below which a reference genome is too distant to map the query against")
+
 #: SOURCE: Mjolnir policy. ANI is computed over an aligned fraction, and a very
 #: high ANI over a small aligned fraction is not a species identification.
 ANI_MIN_ALIGNED_FRACTION = _define(

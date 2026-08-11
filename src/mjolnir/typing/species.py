@@ -75,6 +75,7 @@ from ..utils import (
     require,
     require_database,
     require_file,
+    tempdir,
 )
 from .lineage import PileupCounts, major_allele
 
@@ -605,25 +606,42 @@ def run_mash(query: PathLike, references: Sequence[ReferenceGenome], *,
     binary = require("mash", why="ANI-based species identification") \
         if runner is None else "mash"
     query_path = require_file(query, "the query genome or read set for ANI identification")
-    command: List[str] = [binary, "dist", "-p", str(max(1, int(threads)))]
-    if from_reads:
-        command += ["-r", "-m", "2"]
+    execute = runner or _default_runner
+
+    def _dist(reference_arg: str, present: Sequence[ReferenceGenome]) -> List[AniMatch]:
+        command: List[str] = [binary, "dist", "-p", str(max(1, int(threads)))]
+        if from_reads:
+            command += ["-r", "-m", "2"]
+        command += [reference_arg, str(query_path)]
+        return _parse_mash(execute(command), _index_references(present))
+
     if sketch is not None:
-        command.append(str(require_file(
-            sketch, "the mash sketch of the mycobacterial reference set", ANI_FETCH_HINT)))
-        present: List[ReferenceGenome] = list(references)
-    else:
-        present = [r for r in references if r.exists]
-        if not present:
-            raise MjolnirError(
-                "none of the {0} genomes in the ANI reference manifest are "
-                "present on disk and no {1} sketch was found.\n  fetch them "
-                "with: {2}".format(len(references), MASH_SKETCH_NAME, ANI_FETCH_HINT)
-            )
-        command.extend(str(r.path) for r in present)
-    command.append(str(query_path))
-    text = (runner or _default_runner)(command)
-    return _parse_mash(text, _index_references(present))
+        return _dist(str(require_file(
+            sketch, "the mash sketch of the mycobacterial reference set", ANI_FETCH_HINT)),
+            list(references))
+
+    present = [r for r in references if r.exists]
+    if not present:
+        raise MjolnirError(
+            "none of the {0} genomes in the ANI reference manifest are "
+            "present on disk and no {1} sketch was found.\n  fetch them "
+            "with: {2}".format(len(references), MASH_SKETCH_NAME, ANI_FETCH_HINT)
+        )
+
+    # The references are sketched into one file first, and the query compared
+    # against that. They must NOT be passed to `mash dist` as a list of paths:
+    # `mash dist a b c query` names only `a` as the reference and treats every
+    # later path, the query included, as a query against it. That produced a
+    # candidate list of the reference genomes' distances to each other, in which
+    # the sample appeared as one row among many and never as the top hit — so an
+    # M. chimaera isolate and an M. bovis isolate both reported an identical
+    # 99.1268% "against H37Rv", which is the distance from H37Rv to M. bovis and
+    # has nothing to do with either sample.
+    with tempdir(prefix="mjolnir.mash.") as scratch:
+        prefix = Path(scratch) / "references"
+        execute([binary, "sketch", "-p", str(max(1, int(threads))),
+                 "-o", str(prefix)] + [str(r.path) for r in present])
+        return _dist(str(prefix) + ".msh", present)
 
 
 def _parse_mash(text: str, index: Mapping[str, ReferenceGenome]) -> List[AniMatch]:
