@@ -204,6 +204,7 @@ class Annotation:
         self.sequences = dict(sequences or {})
         self.promoter_bp = int(promoter_bp)
         self._starts = [g.start for g in self.genes]
+        self._contigs = {g.contig for g in self.genes if g.contig}
 
     @classmethod
     def load(cls, gff: PathLike, fasta: Optional[PathLike] = None,
@@ -226,20 +227,42 @@ class Annotation:
             return next(iter(self.sequences.values()))
         return ""
 
-    def genes_at(self, position: int) -> List[Gene]:
-        """Genes containing *position*, innermost first.
+    def _on(self, contig: str) -> List[Gene]:
+        """Genes on *contig*. Position alone is not an address on a real genome.
+
+        H37Rv has one replicon and coordinate-only lookup happens to work there.
+        The *M. chimaera* reference has three, so a variant at position 40,000 of
+        a plasmid was matched against whichever gene spanned position 40,000 of
+        the chromosome and named for it — a gene the variant is nowhere near.
+        A blank contig matches everything, which keeps single-contig callers and
+        the synthetic tests working.
+        """
+        if not contig or len(self._contigs) < 2:
+            # One replicon: the name carries no information the caller does not
+            # already have, and the two sources disagree about it anyway - tbdb
+            # calls H37Rv "Chromosome" where the catalogue calls it NC_000962.3.
+            # Filtering on it here would match nothing at all.
+            return self.genes
+        matched = [g for g in self.genes if g.contig == contig]
+        # An unrecognised contig name is not a reason to silently name variants
+        # against the wrong replicon, nor to name none: fall back only when the
+        # name matches nothing, and only to genes that declare no contig.
+        return matched or [g for g in self.genes if not g.contig]
+
+    def genes_at(self, position: int, contig: str = "") -> List[Gene]:
+        """Genes containing *position* on *contig*, innermost first.
 
         Overlapping genes are real in these genomes, and a variant inside two of
         them is named for the smaller: that is the one whose reading frame the
         catalogues quote.
         """
-        hits = [g for g in self.genes if g.contains(position)]
+        hits = [g for g in self._on(contig) if g.contains(position)]
         hits.sort(key=lambda g: g.length)
         return hits
 
-    def promoters_at(self, position: int) -> List[Gene]:
+    def promoters_at(self, position: int, contig: str = "") -> List[Gene]:
         """Genes whose promoter window contains *position*, nearest start first."""
-        hits = [g for g in self.genes
+        hits = [g for g in self._on(contig)
                 if g.promoter_contains(position, self.promoter_bp)]
         hits.sort(key=lambda g: abs(g.coding_offset(position)))
         return hits
@@ -625,7 +648,7 @@ def names_for(annotation: Annotation, contig: str, position: int,
     # A position can sit inside one gene and upstream of another - 1471699 is
     # inside the ncRNA mcr3 and 147 bases before rrs, and WHO files it as
     # rrs_n.-147G>T. Both names are offered rather than one chosen.
-    for gene in annotation.promoters_at(position):
+    for gene in annotation.promoters_at(position, contig):
         if gene.label == primary_gene:
             continue
         if len(ref) == len(alt):
@@ -647,8 +670,8 @@ def names_for(annotation: Annotation, contig: str, position: int,
     if len(ref) != len(alt):
         for placed_pos, placed_ref, placed_alt in equivalent_placements(
                 sequence, position, ref, alt):
-            for gene in (annotation.genes_at(placed_pos)
-                         or annotation.promoters_at(placed_pos)):
+            for gene in (annotation.genes_at(placed_pos, contig)
+                         or annotation.promoters_at(placed_pos, contig)):
                 nucleotide, _effect = _hgvs_indel(
                     gene, placed_pos, placed_ref, placed_alt)
                 _add(gene.label, nucleotide)
@@ -665,7 +688,7 @@ def names_for(annotation: Annotation, contig: str, position: int,
     if len(ref) == len(alt) > 1:
         codons: Dict[Tuple[str, int], Gene] = {}
         for pos, ref_base, alt_base in _decompose(position, ref, alt):
-            genes = annotation.genes_at(pos) or annotation.promoters_at(pos)
+            genes = annotation.genes_at(pos, contig) or annotation.promoters_at(pos, contig)
             if not genes:
                 continue
             gene = genes[0]
@@ -674,7 +697,7 @@ def names_for(annotation: Annotation, contig: str, position: int,
             _add(gene.label, single_hgvs)
             # The same base can be upstream of a different gene, which is the
             # one WHO files it under (fgd1_c.-39T>A, not Rv0406c_c.-39A>T).
-            for upstream in annotation.promoters_at(pos):
+            for upstream in annotation.promoters_at(pos, contig):
                 if upstream.label == gene.label:
                     continue
                 other, _e = _hgvs_snv(upstream, sequence, pos, ref_base, alt_base)
@@ -690,7 +713,7 @@ def names_for(annotation: Annotation, contig: str, position: int,
                 if protein.endswith("Ter") or codon_number == 1:
                     _add(label, "LoF")
         # WHO files a run of substituted bases as a delins as well.
-        first_gene = (annotation.genes_at(position) or [None])[0]
+        first_gene = (annotation.genes_at(position, contig) or [None])[0]
         if first_gene is not None:
             low = first_gene.coding_offset(position)
             high = first_gene.coding_offset(position + len(ref) - 1)
@@ -714,10 +737,11 @@ def names_for(annotation: Annotation, contig: str, position: int,
                   # pools a premature stop.
                   or re.match(r"^p\.Ter\d+", primary_hgvs) is not None)
     if disruptive:
-        for gene in (annotation.genes_at(position) + annotation.promoters_at(position)):
+        for gene in (annotation.genes_at(position, contig)
+                     + annotation.promoters_at(position, contig)):
             if gene.coding:
                 _add(gene.label, "LoF")
-    for gene in _genes_lost(annotation, position, ref, alt):
+    for gene in _genes_lost(annotation, position, ref, alt, contig):
         _add(gene.label, "LoF")
     return names
 
@@ -747,14 +771,14 @@ def _codon_change(gene: Gene, sequence: str, codon_number: int,
 
 
 def _genes_lost(annotation: Annotation, position: int,
-                ref: str, alt: str) -> List[Gene]:
+                ref: str, alt: str, contig: str = "") -> List[Gene]:
     """Coding genes a deletion removes enough of to be called a loss."""
     if len(alt) >= len(ref):
         return []
     first = position + 1
     last = position + (len(ref) - len(alt))
     lost: List[Gene] = []
-    for gene in annotation.genes:
+    for gene in annotation._on(contig):
         if not gene.coding or gene.end < first or gene.start > last:
             continue
         overlap = min(gene.end, last) - max(gene.start, first) + 1
@@ -773,9 +797,9 @@ def name_variant(annotation: Annotation, contig: str, position: int,
     that a coding-only annotator would drop on the floor.
     """
     sequence = annotation.sequence_for(contig)
-    genes = annotation.genes_at(position)
+    genes = annotation.genes_at(position, contig)
     if not genes:
-        genes = annotation.promoters_at(position)
+        genes = annotation.promoters_at(position, contig)
     if not genes:
         return "", "", "", "intergenic_variant"
     gene = genes[0]
@@ -783,13 +807,27 @@ def name_variant(annotation: Annotation, contig: str, position: int,
     if len(ref) == 1 and len(alt) == 1:
         hgvs, effect = _hgvs_snv(gene, sequence, position, ref, alt)
     elif len(ref) == len(alt):
-        # A substitution of several bases at once, not an indel. Named for the
-        # first base that actually changed; names_for() supplies the rest.
+        # A substitution of several bases at once, not an indel. The name has to
+        # come from the whole codon: taking only the first changed base and
+        # asking what protein change it alone would make names a different amino
+        # acid from the one the genome actually produces - GCT>TGA is a stop, and
+        # reading only its first base called it Ala2Ser.
         changed = _decompose(position, ref, alt)
         if not changed:
             return gene.label, gene.locus_tag, "", "no_change"
         pos, ref_base, alt_base = changed[0]
         hgvs, effect = _hgvs_snv(gene, sequence, pos, ref_base, alt_base)
+        if gene.coding and sequence and hgvs.startswith("p."):
+            coding_position = gene.coding_offset(pos)
+            if coding_position > 0:
+                codon_number = (coding_position - 1) // 3 + 1
+                whole = _codon_change(gene, sequence, codon_number,
+                                      position, ref, alt)
+                if whole:
+                    hgvs = whole
+                    effect = ("stop_gained" if whole.endswith("Ter")
+                              else ("start_lost" if codon_number == 1
+                                    else "missense_variant"))
     else:
         hgvs, effect = _hgvs_indel(gene, position, ref, alt)
     return gene.label, gene.locus_tag, hgvs, effect

@@ -292,6 +292,65 @@ def test_an_insertion_names_the_first_codon_the_shift_actually_reaches(genome):
     assert not any(n.endswith("p.Xaa1fs") for n in produced), produced
 
 
+def test_a_variant_is_not_named_for_a_gene_on_another_contig(tmp_path):
+    """Position alone is not an address on a genome with more than one replicon.
+
+    H37Rv has one, so coordinate-only lookup happened to work. The *M. chimaera*
+    reference has three, and a variant at position 300 of a plasmid was matched
+    against whichever gene spanned position 300 of the chromosome and named for
+    it — a gene the variant is nowhere near, and whose catalogue rows it would
+    then be compared against.
+    """
+    fasta = tmp_path / "multi.fna"
+    fasta.write_text(">chrom\n{0}\n>plasmid\n{1}\n".format("ACGT" * 300, "TTGA" * 300))
+    gff = tmp_path / "multi.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "chrom\tt\tgene\t100\t400\t.\t+\t.\tID=gene:c1;Name=chromGene;"
+        "biotype=protein_coding;gene_id=c1\n"
+        "plasmid\tt\tgene\t100\t400\t.\t+\t.\tID=gene:p1;Name=plasmidGene;"
+        "biotype=protein_coding;gene_id=p1\n")
+    annotation = A.Annotation.load(gff, fasta)
+
+    assert [g.label for g in annotation.genes_at(200, "plasmid")] == ["plasmidGene"]
+    assert [g.label for g in annotation.genes_at(200, "chrom")] == ["chromGene"]
+    produced = A.names_for(annotation, "plasmid", 200, "G", "A")
+    assert produced, "nothing named on the plasmid"
+    assert not any(n.startswith("chromGene") for n in produced), produced
+
+
+def test_a_single_contig_annotation_ignores_the_contig_name(tmp_path):
+    """tbdb calls H37Rv "Chromosome"; the catalogue calls it NC_000962.3.
+
+    With one replicon the name carries no information the caller does not
+    already have, and filtering on it would match nothing at all.
+    """
+    fasta = tmp_path / "one.fna"
+    fasta.write_text(">Chromosome\n{0}\n".format("ACGT" * 300))
+    gff = tmp_path / "one.gff"
+    gff.write_text(
+        "##gff-version 3\n"
+        "Chromosome\tt\tgene\t100\t400\t.\t+\t.\tID=gene:c1;Name=g;"
+        "biotype=protein_coding;gene_id=c1\n")
+    annotation = A.Annotation.load(gff, fasta)
+    assert annotation.genes_at(200, "NC_000962.3"), "a name mismatch matched nothing"
+
+
+def test_a_multi_base_substitution_names_the_amino_acid_the_codon_makes(genome):
+    """Not the one its first base alone would make.
+
+    GCT>TGA is a stop codon; reading only the first base called it a serine
+    substitution. The primary name is what the report prints and what the rules
+    layer classifies, so a nonsense mutation was presented as a missense one.
+    """
+    # Codon 2 of geneA is GAC. Change all three bases to TGA, a stop.
+    position = genome["a_start"] + 3
+    _g, _l, hgvs, effect = A.name_variant(
+        genome["annotation"], "chr1", position, "GAC", "TGA")
+    assert hgvs.endswith("Ter"), (hgvs, effect)
+    assert effect == "stop_gained", (hgvs, effect)
+
+
 # ---------------------------------------------------------------------------
 # The gold standard
 # ---------------------------------------------------------------------------
