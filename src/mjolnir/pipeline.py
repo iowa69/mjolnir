@@ -408,6 +408,9 @@ class Pipeline(object):
         #: than by a species call changes what every coordinate means, so
         #: it has to reach the report rather than only the log.
         self.reference_notes: List[str] = []
+        #: The gene models the current sample was annotated with, kept so the
+        #: NTM path can locate erm(41) without loading the GFF a second time.
+        self._annotation: Any = None
         #: Filled by :meth:`run_sample` when ``options.callable_regions`` is on.
         self.sample_variants: Dict[str, SampleVariants] = {}
 
@@ -664,6 +667,7 @@ class Pipeline(object):
             annotate_module.Annotation.load, gff, reference)
         if annotation is None:
             return
+        self._annotation = annotation
         named = annotate_module.annotate(variants, annotation)
         self.databases_used.add("tbdb")
         LOG.info("%s: named %d of %d variants from %s",
@@ -828,6 +832,7 @@ class Pipeline(object):
         # Cleared per sample: a note about how one sample's reference was
         # chosen must not appear in the next sample's caveats.
         self.reference_notes = []
+        self._annotation = None
         reference = self.resolve_reference(sample, provisional)
         result.reference = str(reference)
         contigs = read_fai(reference)
@@ -961,7 +966,8 @@ class Pipeline(object):
         # -- resistance -------------------------------------------------------
         if self.options.resistance:
             self._resistance(result, variants, pileup, translation, catalogue_positions,
-                             platform, is_mtbc)
+                             platform, is_mtbc, annotation=self._annotation,
+                             bam=bam, reference=reference, contigs=contig_names)
 
         # -- contamination ----------------------------------------------------
         if self.options.contamination:
@@ -1250,13 +1256,17 @@ class Pipeline(object):
                     pileup: Mapping[Tuple[str, int], PileupSite],
                     translation: Mapping[str, str],
                     catalogue_positions: Mapping[str, Set[Tuple[str, int]]],
-                    platform: str, is_mtbc: bool) -> None:
+                    platform: str, is_mtbc: bool,
+                    annotation: Any = None, bam: Optional[Path] = None,
+                    reference: Optional[Path] = None,
+                    contigs: Sequence[str] = ()) -> None:
         """Drug calls, by whichever route the organism has an evidence base for."""
         if is_mtbc:
             self._resistance_mtbc(result, variants, pileup, translation,
                                   catalogue_positions, platform)
             return
-        self._resistance_ntm(result, variants, platform)
+        self._resistance_ntm(result, variants, platform, annotation=annotation,
+                             bam=bam, reference=reference, contigs=contigs)
 
     def _resistance_mtbc(self, result: SampleResult, variants: List[Variant],
                          pileup: Mapping[Tuple[str, int], PileupSite],
@@ -1316,14 +1326,135 @@ class Pipeline(object):
                     "is the call".format(version) if who is not None else
                     "the WHO catalogue was not loaded"))
 
+    def ntm_determinant_sites(self, annotation: Any, contigs: Sequence[str]
+                              ) -> Dict[str, Tuple[str, int]]:
+        """Genomic positions of the NTM determinants, from the gene models.
+
+        ``{"erm(41)": (contig, position), ...}``. Only what the gene models
+        support: a determinant whose gene is absent from this reference is
+        absent from the result, so its rule reports "not assessed" rather than
+        "not found".
+        """
+        if annotation is None:
+            return {}
+        wanted = {"erm(41)": config.ERM41_SEQUEVAR_POSITION}
+        found: Dict[str, Tuple[str, int]] = {}
+        for gene in annotation.genes:
+            offset = wanted.get(gene.label)
+            if offset is None:
+                continue
+            position = (gene.start + offset - 1 if gene.strand == "+"
+                        else gene.end - offset + 1)
+            found[gene.label] = (gene.contig or (contigs[0] if contigs else ""),
+                                 position)
+        return found
+
+    #: How many positions across a determinant gene are sampled to decide
+    #: whether it was callable. SOURCE: Mjolnir policy. A gene is "assessed" if
+    #: a variant in it would have been seen; sampling the span is cheap and
+    #: answers that, where checking one position answers only about that
+    #: position.
+    DETERMINANT_PROBES = 7
+
+    def _callable_determinant_genes(self, annotation: Any, bam: Optional[Path],
+                                    reference: Path, platform: str) -> List[str]:
+        """Which determinant genes had enough coverage for absence to mean anything.
+
+        Without this the rules cannot distinguish "no resistance mutation in
+        rrl" from "rrl was never looked at", and the second must not be reported
+        as the first — so a gene that is not confirmed callable yields a no-call
+        rather than a susceptible one.
+        """
+        if bam is None or annotation is None:
+            return []
+        wanted = {"rrl", "rrs", "erm(41)"}
+        probes: List[Tuple[str, int]] = []
+        spans: Dict[str, List[Tuple[str, int]]] = {}
+        for gene in annotation.genes:
+            if gene.label not in wanted:
+                continue
+            step = max(1, gene.length // (self.DETERMINANT_PROBES + 1))
+            points = [(gene.contig, gene.start + step * i)
+                      for i in range(1, self.DETERMINANT_PROBES + 1)
+                      if gene.start + step * i <= gene.end]
+            spans[gene.label] = points
+            probes.extend(points)
+        if not probes:
+            return []
+        observed = pileup_at(bam, reference, probes, platform=platform,
+                             config=self.config)
+        callable_genes: List[str] = []
+        for label, points in spans.items():
+            covered = sum(1 for point in points
+                          if (observed.get(point) is not None
+                              and observed[point].covered))
+            if points and covered == len(points):
+                callable_genes.append(label)
+        return callable_genes
+
+    def _erm41_observation(self, annotation: Any, bam: Optional[Path],
+                           reference: Path, platform: str,
+                           contigs: Sequence[str]) -> Optional[Any]:
+        """What the reads say at *erm(41)* position 28, or nothing.
+
+        Read from a pileup rather than from the variant list on purpose. T28C is
+        a polymorphism, not a difference from a reference: mapped against an
+        *M. abscessus* subsp. *abscessus* genome C28 is a variant and T28 is
+        invisible, and against a subsp. *massiliense* genome the reverse. Only
+        the base itself answers the question.
+        """
+        if bam is None or annotation is None:
+            return None
+        sites = self.ntm_determinant_sites(annotation, contigs)
+        target = sites.get("erm(41)")
+        if target is None:
+            return None
+        observed = pileup_at(bam, reference, [target], platform=platform,
+                             config=self.config)
+        site = observed.get(target)
+        if site is None or not site.covered:
+            return ntm_engine.Erm41Observation(
+                present=True, method="pileup",
+                note="erm(41) is present in this reference but position {0} was "
+                     "not covered, so the sequevar could not be read".format(
+                         config.ERM41_SEQUEVAR_POSITION))
+        base = max(("ACGT"), key=lambda b: site.counts.get(b, 0))
+        depth = sum(site.counts.get(b, 0) for b in "ACGT")
+        gene = next((g for g in annotation.genes if g.label == "erm(41)"), None)
+        if gene is not None and gene.strand == "-":
+            base = {"A": "T", "C": "G", "G": "C", "T": "A"}.get(base, base)
+        return ntm_engine.Erm41Observation(
+            sequevar_base=base, present=True, depth=depth,
+            allele_fraction=(site.counts.get(base, 0) / float(depth)) if depth else None,
+            method="pileup at erm(41) c.{0}".format(config.ERM41_SEQUEVAR_POSITION))
+
     def _resistance_ntm(self, result: SampleResult, variants: List[Variant],
-                        platform: str) -> None:
+                        platform: str, annotation: Any = None,
+                        bam: Optional[Path] = None,
+                        reference: Optional[Path] = None,
+                        contigs: Sequence[str] = ()) -> None:
         """NTM resistance from the literature rule table (§5.6)."""
+        erm41 = None
+        if reference is not None:
+            erm41 = self._stage(
+                result, "erm41_sequevar", "resistance",
+                "erm(41) was not typed, so inducible macrolide resistance was "
+                "not assessed and the call rests on rrl alone",
+                self._erm41_observation, annotation, bam, reference, platform,
+                contigs)
+        callable_genes = None
+        if reference is not None:
+            callable_genes = self._stage(
+                result, "ntm_determinant_coverage", "resistance",
+                "it is not known which determinant genes were callable, so the "
+                "absence of a mutation in them cannot be reported as an absence",
+                self._callable_determinant_genes, annotation, bam, reference,
+                platform)
         assessment = self._stage(
             result, "ntm_resistance", "resistance",
             "no genotypic drug prediction was made for this organism",
             ntm_engine.call_ntm_resistance, result.species, variants,
-            platform=platform)
+            platform=platform, erm41=erm41, callable_genes=callable_genes)
         if assessment is None:
             return
         result.drugs = assessment.drugs
@@ -1342,15 +1473,25 @@ class Pipeline(object):
             "erm(41)" in (ntm_engine.evidence_for(result.species, call.drug).genes
                           if ntm_engine.evidence_for(result.species, call.drug) else ())
             for call in assessment.drugs)
-        if uses_erm41:
+        if uses_erm41 and erm41 is None:
             result.checks.append(Check.not_measured(
                 "erm41_sequevar",
                 "erm(41) sequevar typing needs the gene's coordinates in this "
-                "reference, which Mjolnir does not yet ship for NTM genomes; the "
-                "macrolide call therefore rests on rrl alone and inducible "
-                "resistance was not assessed",
+                "reference's gene models, and none were available; the macrolide "
+                "call therefore rests on rrl alone and inducible resistance was "
+                "not assessed",
                 source=config.source_for("erm41_sequevar_position"),
                 category="resistance"))
+        elif uses_erm41 and erm41 is not None:
+            result.checks.append(Check(
+                name="erm41_sequevar",
+                value=erm41.sequevar_base or "not covered",
+                threshold=None, source=config.source_for("erm41_sequevar_position"),
+                status=STATUS_PASS if erm41.sequevar_base else STATUS_WARN,
+                measured=bool(erm41.sequevar_base), category="resistance",
+                reading="erm(41) position {0} read as {1} from {2}x.".format(
+                    config.ERM41_SEQUEVAR_POSITION,
+                    erm41.sequevar_base or "no call", erm41.depth or 0)))
 
     # -- contamination ------------------------------------------------------
 
