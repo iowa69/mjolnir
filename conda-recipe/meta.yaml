@@ -86,6 +86,7 @@ test:
     - mjolnir.cohort
     - mjolnir.cohort.cluster
     - mjolnir.cohort.distance
+    - mjolnir.cohort.mask
     - mjolnir.cohort.joint
     - mjolnir.contamination
     - mjolnir.contamination.heterozygosity
@@ -94,6 +95,7 @@ test:
     - mjolnir.db.fetch
     - mjolnir.db.registry
     - mjolnir.engines
+    - mjolnir.engines.annotate
     - mjolnir.engines.call
     - mjolnir.engines.depth
     - mjolnir.engines.map
