@@ -48,6 +48,37 @@ The call is reported as **MAC, not resolved to species**, because §6 requires
 marker SNPs inside MAC and no marker file is installed. That is the designed
 answer, not a failure.
 
+### The cohort refused to produce a number it could not stand behind
+
+Four chimaera isolates — two clinical from one hospital, one from **water**, one
+from a **heater-cooler unit** — were run as a cohort at a 6-SNP threshold, the
+value the 2022 local investigation used. All four:
+
+- were called **MAC**, and
+- were mapped to the same *M. chimaera* reference by ANI proximity, so their
+  coordinates are comparable, and
+- produced **no pairwise distances at all**, because:
+
+> the mask `tbdb mask.bed` names contig `Chromosome` but this cohort was called
+> against `NZ_CP015278.1`, `NZ_CP015279.1`, `NZ_CP015280.1`; under those names
+> the mask would exclude nothing and every distance would silently include the
+> repetitive regions it exists to remove.
+
+**This is the design working, not failing.** The alternative — applying an MTB
+mask that matches no contig, excluding nothing, and printing distances that look
+like masked distances — is exactly the silent wrongness §9 was written against.
+No `cohort.json`, no distance matrix and no clusters were written.
+
+It also means the outbreak-structure test in `VALIDATION.md` §2.2 **has not been
+run**, and cannot be until an NTM repeat mask exists. §9 says NTM references get
+their own mask computed at database build time; that is unimplemented. Until it
+is, cohort mode works only for MTBC.
+
+One further observation, recorded rather than explained: on sample `102-20`,
+`samtools depth` was killed with exit `-9` and coverage was reported as not
+measured. Memory was not exhausted when checked afterwards, so the cause is
+unknown and should be reproduced before anything is concluded from it.
+
 ### The deliberate negative control
 
 No Kraken2 index was configured. The contamination screen reported
@@ -150,7 +181,11 @@ covering MTBC, MAC, *M. abscessus*, *M. kansasii*, *M. marinum* and
 - **MAC marker SNPs**, so *chimaera* can be resolved below the complex.
 - **Phenotypic DST truth** for a resistance-accuracy claim. The drives on hand
   carry no MTB at all and the ENA samples have no DST attached.
+- **An NTM repeat mask.** Without one, cohort mode refuses to compare NTM
+  isolates at all, so the outbreak-structure test cannot run. This blocks the
+  chimaera collection entirely and is second only to annotation.
 - **The full 159-isolate chimaera collection.** Four samples were run here;
-  the outbreak-structure test in `VALIDATION.md` §2.2 needs the whole set.
+  the outbreak-structure test in `VALIDATION.md` §2.2 needs the whole set, and
+  needs the mask above first.
 - **ONT.** No nanopore mycobacterial data was run. Every ONT threshold in the
   tool is still untested.

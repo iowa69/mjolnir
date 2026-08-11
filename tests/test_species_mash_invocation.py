@@ -19,8 +19,6 @@ result-shaped test passed throughout.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from mjolnir.typing import species
