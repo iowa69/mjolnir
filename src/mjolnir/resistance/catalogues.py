@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
+from .. import config
 from ..config import (
     CATALOGUE_MTBSEQ,
     CATALOGUE_TBDB,
@@ -114,10 +115,31 @@ URL_MTBSEQ = "https://github.com/ngs-fzb/MTBseq_source"
 URL_TBDB = "https://github.com/jodyphelan/tbdb"
 
 #: Default file names under ``<db>/``, written by ``mjolnir db fetch``.
-DEFAULT_WHO_XLSX = "who/WHO-UCN-TB-2023.7-eng.xlsx"
-DEFAULT_WHO_COORDINATES = "who/WHO-UCN-TB-2023.7-eng_genomic_coordinates.txt"
-DEFAULT_MTBSEQ_LIST = "mtbseq/MTB_Resistance_Mediating.txt"
-DEFAULT_TBDB_CSV = "tbdb/mutations.csv"
+#: Filenames inside each catalogue's directory. The *directory* is not spelled
+#: out here: it comes from ``db.registry``, which is what ``mjolnir db fetch``
+#: installs against. Hard-coding both halves is how this module ended up looking
+#: for the WHO catalogue in ``who/`` while the fetcher wrote it to
+#: ``who-catalogue-v2/`` and reporting it as missing on a machine that had it.
+DEFAULT_WHO_XLSX = "WHO-UCN-TB-2023.7-eng.xlsx"
+DEFAULT_WHO_COORDINATES = "Genomic_coordinates_7May2024.vcf.gz"
+DEFAULT_MTBSEQ_LIST = "MTB_Resistance_Mediating.txt"
+DEFAULT_TBDB_CSV = "mutations.csv"
+
+
+def catalogue_file(db_root: PathLike, catalogue: str, filename: str) -> Optional[Path]:
+    """Where *filename* of *catalogue* lives under *db_root*, if it is there.
+
+    Resolved through the registry so the loader and the fetcher cannot disagree
+    about a directory name.
+    """
+    from ..db import registry as _registry
+
+    try:
+        name = _registry.CATALOGUE_DATABASES[catalogue]
+    except KeyError:
+        return None
+    candidate = Path(str(db_root)).expanduser() / name / filename
+    return candidate if candidate.exists() else None
 
 FETCH_HINT = "mjolnir db fetch"
 
@@ -1416,15 +1438,20 @@ def load_catalogues(db_dir: Optional[PathLike] = None,
     with only WHO cannot produce the ``R (outside WHO catalogue)`` result at
     all, and a reader needs to know that is why they did not see one.
     """
-    root = Path(str(db_dir)).expanduser() if db_dir is not None else None
+    # Falling back to the configured database root rather than to None. Without
+    # this, load_catalogues() with no arguments reports the WHO catalogue as
+    # missing on a machine where `mjolnir db fetch` has just installed it, and
+    # names the path as "None" while doing so.
+    root = (Path(str(db_dir)).expanduser() if db_dir is not None
+            else config.default_db_dir())
     loaded: Dict[str, Catalogue] = {}
 
-    who_path = Path(str(who)) if who else (root / DEFAULT_WHO_XLSX if root else None)
+    who_path = (Path(str(who)) if who
+                else catalogue_file(root, CATALOGUE_WHO, DEFAULT_WHO_XLSX))
     if who_path is not None and Path(str(who_path)).exists():
         coords = who_coordinates
-        if coords is None and root is not None:
-            candidate = root / DEFAULT_WHO_COORDINATES
-            coords = candidate if candidate.exists() else None
+        if coords is None:
+            coords = catalogue_file(root, CATALOGUE_WHO, DEFAULT_WHO_COORDINATES)
         loaded[CATALOGUE_WHO] = load_who(who_path, coords, strict=strict)
     elif require_who:
         raise MjolnirError(
@@ -1434,8 +1461,8 @@ def load_catalogues(db_dir: Optional[PathLike] = None,
             "is the Mjolnir call, and without it no graded resistance call can "
             "be made at all.".format(who_path, FETCH_HINT))
 
-    mtbseq_path = Path(str(mtbseq)) if mtbseq else (
-        root / DEFAULT_MTBSEQ_LIST if root else None)
+    mtbseq_path = (Path(str(mtbseq)) if mtbseq
+                   else catalogue_file(root, CATALOGUE_MTBSEQ, DEFAULT_MTBSEQ_LIST))
     if mtbseq_path is not None and Path(str(mtbseq_path)).exists():
         loaded[CATALOGUE_MTBSEQ] = load_mtbseq(mtbseq_path)
     else:
@@ -1444,7 +1471,8 @@ def load_catalogues(db_dir: Optional[PathLike] = None,
             "agreement with MTBseq will be absent from this report, which is not "
             "the same as MTBseq agreeing", mtbseq_path)
 
-    tbdb_path = Path(str(tbdb)) if tbdb else (root / DEFAULT_TBDB_CSV if root else None)
+    tbdb_path = (Path(str(tbdb)) if tbdb
+                 else catalogue_file(root, CATALOGUE_TBDB, DEFAULT_TBDB_CSV))
     if tbdb_path is not None and Path(str(tbdb_path)).exists():
         loaded[CATALOGUE_TBDB] = load_tbdb(tbdb_path)
     else:
