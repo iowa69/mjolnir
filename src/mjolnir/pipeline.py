@@ -56,6 +56,7 @@ from .contamination.purity import (INTENDED_USES, TaxonomicScreen,
                                    assess_contamination, evaluate_kraken2_screen,
                                    no_screen)
 from .cohort.cluster import cluster_samples
+from .cohort import mask as mask_module
 from .cohort.distance import Mask, distance_matrix, load_mask
 from .cohort.joint import Regions, SampleVariants, build_joint_table, cohort_size_check
 from .db import fetch as db_fetch
@@ -1617,6 +1618,22 @@ class Pipeline(object):
             self.databases_used.add("operator-supplied mask")
             return load_mask(self.config.mask_bed, name=Path(self.config.mask_bed).name,
                              source="operator-supplied (--mask)")
+
+        # A mask beside the reference wins over tbdb's, because tbdb's is written
+        # against H37Rv contig names and would exclude nothing from anything
+        # else - which is how a four-isolate M. chimaera cohort produced no
+        # distances at all rather than wrong ones.
+        computed = mask_module.default_mask_path(reference)
+        if not computed.exists() and not self._reference_is_h37rv(reference):
+            self._compute_mask(reference, computed)
+        if computed.exists():
+            self.databases_used.add("computed repeat mask")
+            return load_mask(
+                computed, name="computed repeat mask ({0})".format(computed.name),
+                source="minimap2 self-alignment of the reference; repeats and "
+                       "low-complexity only, not the empirically error-prone "
+                       "regions a curated mask carries")
+
         try:
             path = db_fetch.database_file("tbdb", "mask.bed", db_root=self.config.db_dir)
         except MjolnirError as exc:
@@ -1626,6 +1643,33 @@ class Pipeline(object):
                 "thresholds.".format(exc))
         self.databases_used.add("tbdb")
         return load_mask(path, name="tbdb mask.bed", source=config.SRC_TBDB)
+
+    def _reference_is_h37rv(self, reference: str) -> bool:
+        """Whether tbdb's curated mask actually applies to this reference."""
+        try:
+            h37rv = db_fetch.database_file(
+                "h37rv", "{0}.fasta".format(config.H37RV_ACCESSION),
+                db_root=self.config.db_dir)
+        except MjolnirError:
+            return False
+        return Path(reference).resolve() == Path(h37rv).resolve()
+
+    def _compute_mask(self, reference: str, target: Path) -> None:
+        """Build a repeat mask for a reference that has none.
+
+        Five seconds of self-alignment against no cohort analysis at all. It is
+        computed rather than refused because refusing leaves the operator with a
+        collection they cannot analyse and no obvious next step; what it is, and
+        what it is not, travels with it in the BED header and in the mask name
+        the report prints.
+        """
+        try:
+            intervals, lengths = mask_module.build_mask(
+                reference, threads=self.config.threads)
+            mask_module.write_mask(target, intervals,
+                                   reference=Path(reference).name, lengths=lengths)
+        except MjolnirError as exc:
+            LOG.warning("could not compute a repeat mask for %s: %s", reference, exc)
 
     def _interpret_cohort(self, cohort: CohortResult) -> Interpretation:
         from .agent import interpret_cohort
