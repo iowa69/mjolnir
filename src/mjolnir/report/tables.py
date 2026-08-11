@@ -83,6 +83,7 @@ from ..records import (
     CALL_SEVERITY,
     Check,
     CohortResult,
+    DrugCall,
     NO_DETERMINANT_TEXT,
     SampleResult,
     STATUS_FAIL,
@@ -775,6 +776,7 @@ def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
             "cross_resistance": list(call.cross_resistance),
             "target_covered": call.target_covered,
             "supporting_variants": list(call.supporting_variants),
+            "determinants_display": determinants_display(call),
             "caveats": list(call.caveats),
             "note": call.note or None,
         }
@@ -786,6 +788,43 @@ def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
             row[key + "_evidence"] = evidence or None
         rows.append(row)
     return rows
+
+
+#: How many determinants the front-page table prints for one drug before it
+#: summarises. SOURCE: Mjolnir policy, forced by a real run — an *M. chimaera*
+#: isolate against H37Rv matched enough graded variants per drug to build a
+#: table row 4,076 points tall, which is taller than the page, and reportlab
+#: raises LayoutError rather than truncating. So the report did not merely look
+#: cluttered, it failed to render at all. The full list is always in
+#: ``<sample>.catalogue_calls.tsv`` and in the annex.
+MAX_DETERMINANTS_SHOWN = 4
+
+
+def determinants_display(call: DrugCall) -> str:
+    """The determinants worth naming beside a drug on page one.
+
+    The variants that *drive* the call come first — those whose own catalogue
+    call matches the drug's final call — because for a resistant drug the
+    clinically relevant line is the Group 1 mutation, not the eleven benign
+    variants that happened to sit in a graded gene beside it. On a *M. bovis*
+    isolate that is ``pncA_p.His57Asp`` rather than a paragraph of PPE35.
+
+    Never silently truncated: what is not shown is counted, so the reader knows
+    to look in the annex rather than believing they have seen everything.
+    """
+    keys = list(call.supporting_variants)
+    if not keys:
+        return ""
+    driving = [key for key, entries in
+               ((k, [c for c in call.catalogue_calls if c.variant_key == k]) for k in keys)
+               if any(c.call == call.call for c in entries)]
+    ordered = driving + [key for key in keys if key not in driving]
+    shown = ordered[:MAX_DETERMINANTS_SHOWN]
+    hidden = len(ordered) - len(shown)
+    text = "; ".join(shown)
+    if hidden:
+        text += "; +{0} more (annex)".format(hidden)
+    return text
 
 
 def catalogue_call_rows(result: SampleResult) -> List[Dict[str, Any]]:

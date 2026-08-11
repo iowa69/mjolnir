@@ -831,6 +831,7 @@ def _require_reportlab():
         from reportlab.platypus import (KeepTogether, PageBreak, Paragraph,
                                         SimpleDocTemplate, Spacer, Table, TableStyle)
         from reportlab.platypus.flowables import Flowable
+        from reportlab.platypus.doctemplate import LayoutError
     except ImportError as exc:
         raise MjolnirError(
             "reportlab is required to write the PDF report but is not installed "
@@ -841,7 +842,7 @@ def _require_reportlab():
         "colors": colors, "A4": A4, "ParagraphStyle": ParagraphStyle,
         "KeepTogether": KeepTogether, "PageBreak": PageBreak, "Paragraph": Paragraph,
         "SimpleDocTemplate": SimpleDocTemplate, "Spacer": Spacer, "Table": Table,
-        "TableStyle": TableStyle, "Flowable": Flowable,
+        "TableStyle": TableStyle, "Flowable": Flowable, "LayoutError": LayoutError,
     }
 
 
@@ -1119,7 +1120,7 @@ def _drug_table(rl: Dict[str, Any], styles: Dict[str, Any], result: SampleResult
         ("ALIGN", (4, 0), (6, -1), "CENTER"),
     ]
     for index, (row, call) in enumerate(zip(rows, calls), start=1):
-        determinant = "; ".join(row["supporting_variants"]) or "none matched"
+        determinant = row.get("determinants_display") or "none matched"
         flags = "; ".join(T.drug_flags(call))
         cells = [
             Paragraph('<b>{0}</b><br/><font size="5.6" color="{1}">{2}</font>'.format(
@@ -1546,10 +1547,35 @@ def write_pdf(path: Any, result: SampleResult, cohort: Optional[CohortResult] = 
                                          result.sample_id, result.platform),
         "Verdicts are rule-derived from the thresholds in Annex C; prose is labelled "
         "with its source. Absence of a call is absence, never susceptibility.")
-    document.build(_story(rl, styles, result, cohort, chosen),
-                   onFirstPage=furniture, onLaterPages=furniture)
+    _build(rl, document, _story(rl, styles, result, cohort, chosen), furniture, target)
     LOG.info("wrote PDF report: %s", target)
     return target
+
+
+def _build(rl: Dict[str, Any], document: Any, story: Sequence[Any],
+           furniture: Any, target: Path) -> None:
+    """``document.build``, turning a layout failure into something actionable.
+
+    reportlab raises :class:`LayoutError` when a single row is taller than the
+    frame, and it does so with a message naming an object address rather than
+    the drug whose evidence overflowed. That happened on a real *M. chimaera*
+    isolate: enough graded variants matched per drug to build a row 4,076 points
+    tall, and the whole report failed to render — while the HTML and the tables,
+    which have no page, were written and looked complete.
+
+    The cause is fixed upstream in ``tables.determinants_display``. This turns
+    any future recurrence into an error that says which report failed and that
+    its other formats survived, rather than a reportlab traceback.
+    """
+    try:
+        document.build(list(story), onFirstPage=furniture, onLaterPages=furniture)
+    except rl["LayoutError"] as exc:
+        raise MjolnirError(
+            "the PDF for {0} could not be laid out: {1}\n"
+            "  A single table row was taller than the page. The HTML report and "
+            "the TSV artefacts do not paginate and were written.\n"
+            "  Please report this with the sample's .json so the offending table "
+            "can be capped.".format(target.name, exc)) from exc
 
 
 def write_cohort_pdf(path: Any, cohort: CohortResult,
