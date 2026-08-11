@@ -82,6 +82,7 @@ from .seqio import assembly_stats, validate_fasta, validate_fastq
 from .typing.lineage import (H37RV_CHROM_ALIASES, BarcodeSite, barcode_path,
                              call_lineage, lineage_checks, lineage_not_applicable,
                              load_barcode, scheme_description)
+from .typing import species as species_module
 from .typing.species import (ANI_FETCH_HINT, MarkerSnp, ReferenceGenome,
                              ani_matches, identify_species, load_mac_markers,
                              load_reference_set, species_checks)
@@ -954,6 +955,13 @@ class Pipeline(object):
                 marker_counts=self._counts_for(marker_snps, pileup, translation))
             if final is not None:
                 result.species = final
+        if (identified and platform == PLATFORM_ONT
+                and not result.species.resolved_to_species):
+            # Say why, rather than leaving the reader to conclude the isolate is
+            # unidentifiable. The floor is calibrated on assembled sequence and
+            # nanopore read error does not clear it even for a perfect match.
+            result.species.caveats.append(species_module.ONT_ANI_UNDERESTIMATE_NOTE)
+            result.caveats.append(species_module.ONT_ANI_UNDERESTIMATE_NOTE)
         if identified:
             result.checks.extend(species_checks(result.species))
         else:

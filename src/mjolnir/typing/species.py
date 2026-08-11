@@ -135,6 +135,21 @@ READS_METHOD_NOTE = (
     "read-level ANI screen uses mash with single-copy k-mers discarded"
 )
 
+#: SOURCE: measured on this tool, 2026-08-11. A *M. tuberculosis* nanopore run
+#: (DRR261203, 51x, 99.5% mapped, 2.7 kb mean read) gave a top mash ANI of
+#: 94.35% against H37Rv where an Illumina run of the same species gives 99.9%.
+#: Read error inflates the k-mer distance, so the species floor - which is
+#: calibrated on assembled sequence - is not met and no species is named. The
+#: sample is not divergent; the measurement is.
+ONT_ANI_UNDERESTIMATE_NOTE = (
+    "ANI from raw nanopore reads underestimates: read error inflates the k-mer "
+    "distance, and a M. tuberculosis run measured here reached only 94.35% "
+    "against H37Rv where Illumina reaches 99.9%. A species call withheld on "
+    "nanopore reads is a limit of this measurement and not evidence that the "
+    "isolate is something unusual; identity from the lineage barcode, where one "
+    "applies, is unaffected"
+)
+
 
 # ---------------------------------------------------------------------------
 # Taxonomy tables

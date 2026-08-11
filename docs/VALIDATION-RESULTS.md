@@ -174,6 +174,33 @@ near that close, and the number was biologically impossible.
 The taxids are corrected, but the durable fix is that they are no longer
 trusted. The manifest carries the name NCBI reports, not the one that was typed.
 
+### The first nanopore run, and what it exposed
+
+`DRR261203`, a GridION *M. tuberculosis* run: 51× mean depth, 98.7% breadth at
+10×, 99.5% of reads mapped, 2.7 kb mean read length. Until this, every ONT
+threshold in the tool was untested.
+
+What worked: **lineage1.1.1.1** with 40 of 40 barcode sites supporting it,
+**isoniazid resistance** called, the degraded-path warning fired because Clair3
+is not installed, and all five ONT caveats appeared — minor-variant
+under-detection, the `fbiC` delamanid suppression, the 16.6% indel
+uncorroboration on an indel-derived call, the no-trimming note, and the
+statement that R10.4.1 + Dorado `sup` is assumed and cannot be verified from a
+FASTQ.
+
+**What it exposed: the ANI species floor is calibrated for assembled sequence
+and is not met by nanopore reads.** The top hit was *M. tuberculosis* H37Rv at
+**94.35%**, against the 95% floor — where an Illumina run of the same species
+reaches 99.9%. Read error inflates the k-mer distance. So no species was named,
+although the barcode placed the isolate confidently and the MTBC catalogues
+still applied through the reference.
+
+The tool was right to withhold the species — a floor it cannot meet is not a
+licence to guess — but a reader would reasonably have concluded the isolate was
+unidentifiable. The report now says why, and says that identity from the lineage
+barcode is unaffected. Setting a lower ONT-specific floor would need validation
+against known-species nanopore data, which is not something one run can provide.
+
 ### The deliberate negative control
 
 No Kraken2 index was configured. The contamination screen reported
