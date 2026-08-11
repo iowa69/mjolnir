@@ -668,12 +668,26 @@ class Pipeline(object):
         self.databases_used.add("tbdb")
         LOG.info("%s: named %d of %d variants from %s",
                  result.sample_id, named, len(variants), Path(gff).name)
+        total = len(variants)
+        # Status follows the result. Reporting pass on a run that named nothing
+        # says the annotation step succeeded when it produced no names at all,
+        # and the two catalogues keyed on those names then match nothing while
+        # the report looks complete.
+        if named == 0:
+            status = STATUS_FAIL
+        elif named < total:
+            status = STATUS_WARN
+        else:
+            status = STATUS_PASS
         result.checks.append(Check(
-            name="variant_gene_annotation", value=named, threshold=None,
-            source="tbdb genome.gff gene models", status=STATUS_PASS,
+            name="variant_gene_annotation", value=named, threshold=total or None,
+            source="tbdb genome.gff gene models", status=status,
             measured=True, category="resistance",
-            reading="{0} of {1} called variants were named for a gene.".format(
-                named, len(variants))))
+            reading="{0} of {1} called variants were named for a gene.{2}".format(
+                named, total,
+                "" if named == total else
+                " Unnamed variants cannot be matched against MTBseq or tbdb, "
+                "which are keyed on the gene and HGVS name.")))
 
     def _nearest_reference(self, species: Optional[SpeciesCall]
                            ) -> Optional[Tuple[Path, str, float]]:
@@ -762,7 +776,6 @@ class Pipeline(object):
         )
         result.checks.extend(evidence_checks)
         result.caveats.extend(config.platform_caveats(platform))
-        result.caveats.extend(self.reference_notes)
         if platform != PLATFORM_FASTA:
             result.caveats.append(NO_TRIMMING_NOTE)
         if platform == PLATFORM_ONT:
@@ -883,6 +896,11 @@ class Pipeline(object):
         barcode_sites = self.barcode() if self.options.typing else []
         marker_snps = self.markers() if self.options.typing else []
         is_mtbc, assumption = self.mtbc_context(result.species, reference, contig_names)
+        # Extended here, not before the reference was chosen: this is the only
+        # read of reference_notes, and it used to run before resolve_reference
+        # had appended anything, so the note explaining that a sample was mapped
+        # to the nearest genome by ANI never reached a single report.
+        result.caveats.extend(self.reference_notes)
         if variants:
             self._annotate(result, variants, reference, is_mtbc)
             if not any(v.gene for v in variants):
@@ -1684,6 +1702,13 @@ class Pipeline(object):
             # every NTM cohort to tbdb's H37Rv mask.
             reference=str(reference), lengths=lengths)
         except MjolnirError as exc:
+            # Recorded, not merely logged. build_mask refuses a mask that would
+            # exclude over a third of the genome precisely because distances
+            # through it would not mean anything, and a warning on stderr is not
+            # a place a reader of the report will ever look.
+            self.reference_notes.append(
+                "no repeat mask could be computed for {0}: {1}".format(
+                    Path(reference).name, exc))
             LOG.warning("could not compute a repeat mask for %s: %s", reference, exc)
 
     def _interpret_cohort(self, cohort: CohortResult) -> Interpretation:

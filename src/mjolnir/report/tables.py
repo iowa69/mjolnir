@@ -125,6 +125,7 @@ CALL_GLYPH: Dict[str, str] = {
     "S": "S",
     CALL_NO_CALL: "ND",
     "not-consulted": "--",
+    "not-assessed": "?",
 }
 
 #: Legend text, spelled once, printed by both renderers. The first two entries
@@ -132,6 +133,10 @@ CALL_GLYPH: Dict[str, str] = {
 CALL_LEGEND: Tuple[Tuple[str, str], ...] = (
     (CALL_NO_CALL, "ND - no resistance determinant detected: nothing catalogued "
                    "was found. This is absence of evidence, not susceptibility."),
+    ("not-assessed",
+     "? - not assessed: variant calling did not produce a result for this "
+     "sample, so no drug was searched. This is not ND, which reports a search "
+     "that found nothing."),
     ("not-consulted",
      "-- this catalogue could not be consulted for this sample and said nothing "
      "either way. MTBseq and tbdb are matched on the <gene>_<hgvs> key, so "
@@ -769,6 +774,26 @@ def drug_flags(drug_call: Any) -> List[str]:
 #: found nothing. They never looked.
 CATALOGUE_NOT_CONSULTED = "not-consulted"
 
+#: What a drug row says when variant calling never produced a result for this
+#: sample. SOURCE: Mjolnir policy. "No resistance determinant detected" is a
+#: statement about a search that happened; on a sample where calling failed no
+#: search happened, and printing ND for all fifteen drugs is the report at its
+#: most confident exactly where it knows least.
+CALL_NOT_ASSESSED = "not-assessed"
+
+
+def variants_were_measured(result: SampleResult) -> bool:
+    """Whether this sample got as far as producing a variant call.
+
+    Read from the checks rather than from ``len(result.variants)``: a genuine
+    zero-variant sample and a sample whose caller died both have an empty list,
+    and only one of them supports the sentence "no determinant was detected".
+    """
+    for check in result.all_checks():
+        if check.name in ("variant_calling", "sample_analysed") and not check.measured:
+            return False
+    return True
+
 
 def consultable_catalogues(result: SampleResult) -> Dict[str, bool]:
     """Which catalogues could be matched against at all for this sample.
@@ -793,14 +818,17 @@ def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
     """One row per drug, with every catalogue's own answer beside the consensus."""
     rows: List[Dict[str, Any]] = []
     consultable = consultable_catalogues(result)
+    measured = variants_were_measured(result)
     for call in sorted(result.drugs, key=lambda d: drug_order(d.drug)):
         row: Dict[str, Any] = {
             "sample": result.sample_id,
             "drug": call.drug,
             "drug_code": drug_code(call.drug),
-            "call": call.call,
-            "call_glyph": CALL_GLYPH.get(call.call, call.call),
-            "call_label": call.label,
+            "call": call.call if measured else CALL_NOT_ASSESSED,
+            "call_glyph": CALL_GLYPH.get(
+                call.call if measured else CALL_NOT_ASSESSED, call.call),
+            "call_label": call.label if measured else
+                          "not assessed: no variant call was produced",
             "confidence": call.confidence,
             "who_graded": call.who_graded,
             "who_grade": call.who_grade or None,
@@ -818,7 +846,9 @@ def drug_rows(result: SampleResult) -> List[Dict[str, Any]]:
         for catalogue in CATALOGUES:
             key = catalogue_key(catalogue)
             cat_call, grade, evidence = _catalogue_view(call, catalogue)
-            if cat_call == CALL_NO_CALL and not consultable.get(catalogue, True):
+            if not measured:
+                cat_call = CALL_NOT_ASSESSED
+            elif cat_call == CALL_NO_CALL and not consultable.get(catalogue, True):
                 cat_call = CATALOGUE_NOT_CONSULTED
             row[key + "_call"] = cat_call
             row[key + "_grade"] = grade or None
