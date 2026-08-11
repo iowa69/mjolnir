@@ -35,6 +35,7 @@ and hang the run with no error at all.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -504,21 +505,28 @@ def reference_index_paths(reference: PathLike, tool: str) -> List[Path]:
 def ensure_reference_index(reference: PathLike, tool: str, *, build: bool = False) -> Path:
     """Check that *reference* is indexed for *tool*, or say exactly how to index it.
 
-    Default is to refuse rather than to build. A reference lives in the database
-    directory, which may be read-only and shared between users, and a pipeline
-    that quietly starts a multi-minute index build in the middle of a batch is
-    indistinguishable from a pipeline that has hung.
+    The two indexes are treated differently because they cost differently.
+
+    ``samtools faidx`` on a 4.4 Mb genome takes about a second, so it is built on
+    demand whenever the directory is writable. Refusing it only sends the user
+    away to run a command that takes less time than reading the error did — and
+    ``mjolnir db fetch`` followed by ``mjolnir run`` failed on exactly that.
+
+    An aligner index is minutes, and a pipeline that quietly starts one in the
+    middle of a batch is indistinguishable from a pipeline that has hung, so that
+    one still refuses unless asked with ``--build-index``. A read-only database
+    directory also refuses, with the command to run.
     """
     fasta = require_file(reference, "reference FASTA")
     fai = Path(str(fasta) + ".fai")
     if not fai.exists():
-        if build:
+        if build or os.access(str(fasta.parent), os.W_OK):
             LOG.info("indexing %s with samtools faidx", fasta.name)
             run_pipeline([samtools_faidx_argv(fasta)])
         else:
             raise MjolnirError(
-                "reference {0} has no .fai index.\n"
-                "  samtools faidx {0}".format(fasta))
+                "reference {0} has no .fai index and {1} is not writable.\n"
+                "  samtools faidx {0}".format(fasta, fasta.parent))
 
     if tool in INDEX_SUFFIXES:
         missing = [path for path in reference_index_paths(fasta, tool) if not path.exists()]

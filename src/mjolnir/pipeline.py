@@ -62,7 +62,7 @@ from .db import fetch as db_fetch
 from .db import registry as db_registry
 from .engines.call import call_variants
 from .engines.depth import measure_coverage, samtools_depth_argv
-from .engines.map import iter_output, map_reads
+from .engines.map import ensure_reference_index, iter_output, map_reads
 from .engines.pileup import PileupSite, allele_fraction_at, pileup_at
 from .records import (PLATFORM_FASTA, PLATFORM_ILLUMINA, PLATFORM_ONT,
                       STATUS_FAIL, STATUS_WARN, Check, CohortResult,
@@ -196,8 +196,10 @@ def read_fai(reference: Path) -> List[Tuple[str, int]]:
     """
     fai = Path(str(reference) + ".fai")
     if not fai.exists():
-        raise MjolnirError(
-            "reference {0} has no .fai index.\n  samtools faidx {0}".format(reference))
+        # Built on demand when the directory allows it: a .fai on a 4.4 Mb genome
+        # is a one-second job, and refusing it only sends the reader away to run
+        # a command shorter than the error explaining it.
+        ensure_reference_index(reference, tool="", build=False)
     contigs: List[Tuple[str, int]] = []
     with open(str(fai), "rt", errors="replace") as handle:
         for line_number, line in enumerate(handle, start=1):
