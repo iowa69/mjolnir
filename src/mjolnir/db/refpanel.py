@@ -53,6 +53,14 @@ class PanelSpecies:
     why: str = ""
 
 
+#: Every taxid below was verified against the NCBI taxonomy service rather than
+#: recalled: the first draft of this table had six wrong, and a wrong taxid does
+#: not fail - it returns a real genome for another organism. Taxid 1698 returns
+#: *Brevibacterium epidermidis* and 1096 returns *Chlorobium phaeobacteroides*,
+#: a green sulfur bacterium, either of which would have entered a mycobacterial
+#: reference panel under a mycobacterial name. ``build_panel`` re-checks each one
+#: at fetch time, so this comment is a courtesy and the check is the guarantee.
+#:
 #: The panel. MTBC members are here so that ANI can place a sample in the
 #: complex; it cannot separate them, and :mod:`mjolnir.typing.species` refuses to
 #: try. Everything else is a species a mycobacterial isolate might actually be,
@@ -65,22 +73,22 @@ PANEL: Tuple[PanelSpecies, ...] = (
     PanelSpecies(33894, "Mycobacterium tuberculosis variant africanum", "MTBC",
                  "lineages 5 and 6"),
     PanelSpecies(1806, "Mycobacterium tuberculosis variant microti", "MTBC"),
-    PanelSpecies(78331, "Mycobacterium canettii", "MTBC",
+    PanelSpecies(78331, "Mycobacterium canetti", "MTBC",
                  "the most divergent MTBC member; a useful outgroup"),
     PanelSpecies(222805, "Mycobacterium intracellulare subsp. chimaera", "MAC",
                  "the heater-cooler outbreak organism"),
     PanelSpecies(1767, "Mycobacterium intracellulare", "MAC",
                  "chimaera's nearest neighbour; the hard MAC call"),
     PanelSpecies(1764, "Mycobacterium avium", "MAC"),
-    PanelSpecies(1782, "Mycobacterium scrofulaceum", "MAC"),
-    PanelSpecies(1305738, "Mycobacterium paraintracellulare", "MAC"),
-    PanelSpecies(1157943, "Mycobacterium yongonense", "MAC"),
+    PanelSpecies(1783, "Mycobacterium scrofulaceum", "MAC"),
+    PanelSpecies(1138383, "Mycobacterium paraintracellulare", "MAC"),
+    PanelSpecies(1203599, "Mycobacterium intracellulare subsp. yongonense", "MAC"),
     PanelSpecies(36809, "Mycobacteroides abscessus", "abscessus",
                  "erm(41) sequevar typing applies to this group"),
-    PanelSpecies(1698, "Mycobacteroides chelonae", "abscessus"),
+    PanelSpecies(1774, "Mycobacteroides chelonae", "abscessus"),
     PanelSpecies(1768, "Mycobacterium kansasii"),
     PanelSpecies(1781, "Mycobacterium marinum"),
-    PanelSpecies(1769, "Mycolicibacterium fortuitum"),
+    PanelSpecies(1766, "Mycolicibacterium fortuitum"),
     PanelSpecies(1778, "Mycobacterium gordonae",
                  "the commonest contaminant of mycobacterial culture"),
     PanelSpecies(1789, "Mycobacterium xenopi"),
@@ -92,7 +100,7 @@ PANEL: Tuple[PanelSpecies, ...] = (
     PanelSpecies(56689, "Mycolicibacterium mucogenicum"),
     PanelSpecies(1772, "Mycolicibacterium smegmatis",
                  why="a laboratory strain, and a contaminant worth naming"),
-    PanelSpecies(1096, "Mycobacterium leprae"),
+    PanelSpecies(1769, "Mycobacterium leprae"),
     PanelSpecies(1771, "Mycolicibacterium phlei"),
 )
 
