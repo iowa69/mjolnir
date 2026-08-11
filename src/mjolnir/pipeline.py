@@ -1368,6 +1368,14 @@ class Pipeline(object):
     #: position.
     DETERMINANT_PROBES = 7
 
+    #: How much of erm(41) must be covered before its sequevar means anything.
+    #: SOURCE: Mjolnir policy, from the M. abscessus subsp. massiliense deletion:
+    #: it removes roughly 274 of 522 bases and leaves position 28 intact, so a
+    #: sequevar read from that position alone describes a gene the isolate does
+    #: not have - and massiliense is the one abscessus-group subspecies where
+    #: macrolides still work.
+    ERM41_MIN_BODY_COVERED = 0.80
+
     def _callable_determinant_genes(self, annotation: Any, bam: Optional[Path],
                                     reference: Path, platform: str) -> List[str]:
         """Which determinant genes had enough coverage for absence to mean anything.
@@ -1407,38 +1415,91 @@ class Pipeline(object):
     def _erm41_observation(self, annotation: Any, bam: Optional[Path],
                            reference: Path, platform: str,
                            contigs: Sequence[str]) -> Optional[Any]:
-        """What the reads say at *erm(41)* position 28, or nothing.
+        """What the reads say about *erm(41)*, or an explicit record that nothing does.
 
         Read from a pileup rather than from the variant list on purpose. T28C is
         a polymorphism, not a difference from a reference: mapped against an
         *M. abscessus* subsp. *abscessus* genome C28 is a variant and T28 is
         invisible, and against a subsp. *massiliense* genome the reverse. Only
         the base itself answers the question.
+
+        Two things it must refuse to do, because both err toward "susceptible"
+        and that is the direction that costs a patient the drug:
+
+        A **mixture is not a genotype.** ``major_allele`` returns None on a tie,
+        so a 50/50 T/C population - a mixed or emerging inducible-resistant
+        subpopulation - is reported as not assessed rather than resolved to C by
+        alphabetical order.
+
+        A **gene that is not there has no sequevar.** *M. abscessus* subsp.
+        *massiliense* carries a truncated *erm(41)*, and that truncation is what
+        leaves macrolides curative. Position 28 sits outside the deletion, so
+        reading only that base reports a functional gene for an isolate that has
+        none. The gene body is measured, and a large uncovered stretch is
+        reported as a truncation.
         """
         if bam is None or annotation is None:
             return None
+        gene = next((g for g in annotation.genes if g.label == "erm(41)"), None)
         sites = self.ntm_determinant_sites(annotation, contigs)
         target = sites.get("erm(41)")
-        if target is None:
+        if gene is None or target is None:
             return None
-        observed = pileup_at(bam, reference, [target], platform=platform,
+
+        # Position 28 plus a spread across the gene body, in one pileup.
+        body = [(gene.contig, position) for position in range(
+            gene.start, gene.end + 1,
+            max(1, gene.length // (self.DETERMINANT_PROBES * 2)))]
+        observed = pileup_at(bam, reference, [target] + body, platform=platform,
                              config=self.config)
+
+        covered = [p for p in body if observed.get(p) is not None
+                   and observed[p].covered]
+        body_fraction = (len(covered) / float(len(body))) if body else 0.0
+        truncated = bool(body) and body_fraction < self.ERM41_MIN_BODY_COVERED
+        missing_bp = int(round((1.0 - body_fraction) * gene.length))
+
         site = observed.get(target)
-        if site is None or not site.covered:
+        floor = max(self.config.min_reads(platform), self.config.degraded_depth_floor)
+        if site is None or site.acgt_depth < floor:
             return ntm_engine.Erm41Observation(
-                present=True, method="pileup",
-                note="erm(41) is present in this reference but position {0} was "
-                     "not covered, so the sequevar could not be read".format(
-                         config.ERM41_SEQUEVAR_POSITION))
-        base = max(("ACGT"), key=lambda b: site.counts.get(b, 0))
-        depth = sum(site.counts.get(b, 0) for b in "ACGT")
-        gene = next((g for g in annotation.genes if g.label == "erm(41)"), None)
-        if gene is not None and gene.strand == "-":
+                present=True, truncated=truncated or None,
+                deletion_bp=missing_bp if truncated else None,
+                depth=site.acgt_depth if site is not None else 0,
+                method="pileup at erm(41) c.{0}".format(config.ERM41_SEQUEVAR_POSITION),
+                note="erm(41) position {0} was covered at {1}x, below the {2}x "
+                     "floor, so the sequevar was not called".format(
+                         config.ERM41_SEQUEVAR_POSITION,
+                         site.acgt_depth if site is not None else 0, floor))
+
+        base = site.major_allele()
+        if base is None or site.fraction(base) < self.config.major_variant_fraction:
+            spread = ", ".join(
+                "{0} {1:.0%}".format(allele, site.fraction(allele))
+                for allele in "ACGT" if site.count(allele))
+            return ntm_engine.Erm41Observation(
+                present=True, truncated=truncated or None,
+                deletion_bp=missing_bp if truncated else None,
+                depth=site.acgt_depth,
+                method="pileup at erm(41) c.{0}".format(config.ERM41_SEQUEVAR_POSITION),
+                note="erm(41) position {0} is mixed ({1}) at {2}x; the sequevar "
+                     "could not be called, so inducible macrolide resistance is "
+                     "neither detected nor excluded".format(
+                         config.ERM41_SEQUEVAR_POSITION, spread, site.acgt_depth))
+
+        if gene.strand == "-":
             base = {"A": "T", "C": "G", "G": "C", "T": "A"}.get(base, base)
         return ntm_engine.Erm41Observation(
-            sequevar_base=base, present=True, depth=depth,
-            allele_fraction=(site.counts.get(base, 0) / float(depth)) if depth else None,
-            method="pileup at erm(41) c.{0}".format(config.ERM41_SEQUEVAR_POSITION))
+            sequevar_base=None if truncated else base,
+            present=True,
+            truncated=truncated or None,
+            deletion_bp=missing_bp if truncated else None,
+            depth=site.acgt_depth, allele_fraction=site.fraction(site.major_allele()),
+            method="pileup at erm(41) c.{0} with the gene body measured".format(
+                config.ERM41_SEQUEVAR_POSITION),
+            note=("only {0:.0%} of erm(41) was covered, so the gene is reported "
+                  "as truncated and its sequevar is not used".format(body_fraction)
+                  if truncated else ""))
 
     def _resistance_ntm(self, result: SampleResult, variants: List[Variant],
                         platform: str, annotation: Any = None,

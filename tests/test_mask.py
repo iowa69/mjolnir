@@ -276,3 +276,51 @@ def test_an_empty_organism_name_is_not_a_match():
     from mjolnir.db.refpanel import _same_organism
 
     assert not _same_organism("Mycobacterium avium", "")
+
+
+# ---------------------------------------------------------------------------
+# erm(41), where both errors cost the patient a drug
+# ---------------------------------------------------------------------------
+
+def _clarithromycin(**kwargs):
+    from mjolnir.resistance import ntm
+
+    assessment = ntm.call_ntm_resistance(
+        "Mycobacteroides abscessus", [], platform="illumina",
+        erm41=ntm.Erm41Observation(**kwargs),
+        callable_genes=["rrl", "rrs", "erm(41)"])
+    return [d for d in assessment.drugs if d.drug.startswith("Clarithro")][0]
+
+
+def test_a_mixed_erm41_site_is_not_resolved_to_susceptible():
+    """A 50/50 T/C population is a mixture, not a genotype.
+
+    ``max("ACGT", ...)`` resolved a tie to C by alphabetical order, and C28 is
+    the susceptible sequevar — so a mixed or emerging inducible-resistant
+    subpopulation read as macrolide-susceptible, which is the direction that
+    costs the patient the drug.
+    """
+    call = _clarithromycin(present=True, depth=40, note="mixed")
+    assert call.call == "no-call", call.call
+
+
+def test_a_truncated_erm41_is_not_reported_as_functional():
+    """*M. abscessus* subsp. *massiliense* is why this matters.
+
+    Its truncated erm(41) is what leaves macrolides curative, and the deletion
+    does not reach position 28 — so reading only that base describes a gene the
+    isolate does not have and reports R, removing the one effective drug class.
+    """
+    call = _clarithromycin(present=True, truncated=True, deletion_bp=274, depth=60)
+    assert call.call == "S", call.call
+
+
+def test_a_clean_t28_is_still_resistant():
+    """The guards must not swallow the finding they exist to qualify."""
+    assert _clarithromycin(sequevar_base="T", present=True, depth=60,
+                           allele_fraction=1.0).call == "R"
+
+
+def test_a_clean_c28_is_still_susceptible():
+    assert _clarithromycin(sequevar_base="C", present=True, depth=60,
+                           allele_fraction=1.0).call == "S"
